@@ -115,7 +115,8 @@
       div.appendChild(meta);
 
       const text = document.createElement('div');
-      text.textContent = msg.text;
+      text.style.whiteSpace = 'pre-wrap';
+      text.textContent = msg.text || msg.content || '';
       div.appendChild(text);
 
       if (msg.type === 'approval-request' && !msg._resolved) {

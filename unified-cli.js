@@ -66,7 +66,12 @@ function invoke(cli, prompt, options = {}) {
   const adapter = adapters[cli];
   if (!adapter) return Promise.reject(new Error(`Unknown CLI: ${cli}`));
 
-  const { sessionId, verbose = false } = options;
+  const {
+    sessionId,
+    verbose = false,
+    timeoutMs = 600_000,   // 10 min default — agent tasks can be long
+    killGraceMs = 5_000,   // wait 5s after SIGTERM before SIGKILL
+  } = options;
   const args = adapter.buildArgs(prompt, { sessionId, verbose });
 
   // Remove Claude-related env vars so claude CLI can run from inside a claude session
@@ -84,6 +89,50 @@ function invoke(cli, prompt, options = {}) {
   const isJsonMode = cli === "codex" || isStreamJson;
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let lastActivity = Date.now();
+    const stderrBuf = [];  // capture stderr for error diagnostics
+
+    const settle = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      fn(val);
+    };
+
+    // Graceful kill: SIGTERM → wait → SIGKILL
+    const killChild = () => {
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* already dead */ }
+      }, killGraceMs);
+    };
+
+    // Timeout watchdog — monitors both stdout and stderr activity
+    const timer = timeoutMs > 0 && setInterval(() => {
+      if (Date.now() - lastActivity > timeoutMs) {
+        killChild();
+        settle(reject, new Error(
+          `${cli} timed out after ${timeoutMs / 1000}s of inactivity`
+        ));
+      }
+    }, 5_000);
+
+    // Forward SIGINT/SIGTERM to child so Ctrl+C cleans up
+    const onSignal = (sig) => {
+      killChild();
+      settle(reject, new Error(`${cli} killed by ${sig}`));
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+
+    const cleanup = () => {
+      if (timer) clearInterval(timer);
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
+    };
+    const touch = () => { lastActivity = Date.now(); };
+
     if (isJsonMode) {
       // Parse JSON lines (stream-json for claude, --json for codex)
       const chunks = [];
@@ -91,6 +140,7 @@ function invoke(cli, prompt, options = {}) {
 
       const rl = createInterface({ input: child.stdout });
       rl.on("line", (line) => {
+        touch();
         if (!line.trim()) return;
         try {
           const event = JSON.parse(line);
@@ -103,26 +153,46 @@ function invoke(cli, prompt, options = {}) {
         }
       });
 
-      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+      child.stderr.on("data", (chunk) => {
+        touch();
+        stderrBuf.push(chunk);
+        process.stderr.write(chunk);
+      });
 
       child.on("close", (code) => {
-        if (code !== 0) reject(new Error(`${cli} exited with code ${code}`));
-        else resolve({ text: chunks.join(""), sessionId: sid });
+        if (code !== 0) {
+          const msg = Buffer.concat(stderrBuf).toString().trim();
+          settle(reject, new Error(
+            `${cli} exited with code ${code}${msg ? `\n${msg}` : ""}`
+          ));
+        } else {
+          settle(resolve, { text: chunks.join(""), sessionId: sid });
+        }
       });
     } else {
       // Plain text mode (claude without --verbose)
       const chunks = [];
 
-      child.stdout.on("data", (chunk) => chunks.push(chunk));
-      child.stderr.on("data", (chunk) => process.stderr.write(chunk));
+      child.stdout.on("data", (chunk) => { touch(); chunks.push(chunk); });
+      child.stderr.on("data", (chunk) => {
+        touch();
+        stderrBuf.push(chunk);
+        process.stderr.write(chunk);
+      });
 
       child.on("close", (code) => {
-        if (code !== 0) reject(new Error(`${cli} exited with code ${code}`));
-        else resolve({ text: Buffer.concat(chunks).toString(), sessionId: null });
+        if (code !== 0) {
+          const msg = Buffer.concat(stderrBuf).toString().trim();
+          settle(reject, new Error(
+            `${cli} exited with code ${code}${msg ? `\n${msg}` : ""}`
+          ));
+        } else {
+          settle(resolve, { text: Buffer.concat(chunks).toString(), sessionId: null });
+        }
       });
     }
 
-    child.on("error", reject);
+    child.on("error", (err) => settle(reject, err));
   });
 }
 
@@ -134,6 +204,7 @@ function parseArgs(argv) {
   const args = argv.slice(2);
   let verbose = false;
   let sessionId = null;
+  let timeoutMs = undefined;
   const rest = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -141,6 +212,8 @@ function parseArgs(argv) {
       verbose = true;
     } else if (args[i] === "--resume") {
       sessionId = args[++i];
+    } else if (args[i] === "--timeout") {
+      timeoutMs = Number(args[++i]) * 1000; // accept seconds from CLI
     } else {
       rest.push(args[i]);
     }
@@ -151,21 +224,22 @@ function parseArgs(argv) {
     prompt: rest.slice(1).join(" "),
     sessionId,
     verbose,
+    timeoutMs,
   };
 }
 
 async function main() {
-  const { cli, prompt, sessionId, verbose } = parseArgs(process.argv);
+  const { cli, prompt, sessionId, verbose, timeoutMs } = parseArgs(process.argv);
 
   if (!cli || !prompt) {
     console.error(
-      "Usage: node unified-cli.js <claude|codex> [--verbose] [--resume <id>] \"prompt\""
+      "Usage: node unified-cli.js <claude|codex> [--verbose] [--resume <id>] [--timeout <secs>] \"prompt\""
     );
     process.exit(1);
   }
 
   try {
-    const result = await invoke(cli, prompt, { sessionId, verbose });
+    const result = await invoke(cli, prompt, { sessionId, verbose, timeoutMs });
     process.stdout.write(result.text.trimEnd() + "\n");
     if (result.sessionId) {
       process.stderr.write(`[session: ${result.sessionId}]\n`);
