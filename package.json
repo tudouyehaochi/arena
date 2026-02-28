@@ -5,7 +5,8 @@
   "main": "unified-cli.js",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "start:resident": "node start-resident.js"
+    "start:resident": "node start-resident.js",
+    "worktree:setup": "bash scripts/setup-worktrees.sh"
   },
   "repository": {
     "type": "git",
