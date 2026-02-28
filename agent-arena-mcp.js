@@ -2,10 +2,24 @@ const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio.js');
 const { z } = require('zod');
 const http = require('http');
+const path = require('path');
+const { execSync } = require('child_process');
+const { registerFileTools } = require('./lib/mcp-file-tools');
+const { registerGitTools } = require('./lib/mcp-git-tools');
 
 const API_URL = process.env.ARENA_API_URL || 'http://localhost:3000';
 const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
 const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
+const PROJECT_ROOT = process.env.ARENA_PROJECT_ROOT || path.join(__dirname);
+const REQUEST_TIMEOUT_MS = 10000; // 10s timeout (P2)
+
+// Fail-fast: refuse to start without credentials (P2)
+if (!INVOCATION_ID || !CALLBACK_TOKEN) {
+  console.error('FATAL: Missing ARENA_INVOCATION_ID or ARENA_CALLBACK_TOKEN');
+  process.exit(1);
+}
+
+const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 
 function httpRequest(method, urlStr, body) {
   return new Promise((resolve, reject) => {
@@ -15,7 +29,11 @@ function httpRequest(method, urlStr, body) {
       port: url.port,
       path: url.pathname + url.search,
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': AUTH_HEADER,
+      },
+      timeout: REQUEST_TIMEOUT_MS,
     };
     const req = http.request(options, (res) => {
       let data = '';
@@ -23,10 +41,19 @@ function httpRequest(method, urlStr, body) {
       res.on('end', () => {
         if (res.statusCode >= 400) {
           reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-        } else {
-          resolve(JSON.parse(data));
+          return;
+        }
+        // Safe JSON parse (P2: empty response guard)
+        try {
+          resolve(data ? JSON.parse(data) : {});
+        } catch (parseErr) {
+          reject(new Error(`JSON parse error: ${parseErr.message}`));
         }
       });
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`Request timeout after ${REQUEST_TIMEOUT_MS}ms`));
     });
     req.on('error', reject);
     if (body) req.write(JSON.stringify(body));
@@ -34,10 +61,9 @@ function httpRequest(method, urlStr, body) {
   });
 }
 
-const server = new McpServer({
-  name: 'arena',
-  version: '1.0.0',
-});
+// --- MCP Server setup ---
+
+const server = new McpServer({ name: 'arena', version: '1.0.0' });
 
 server.tool(
   'arena_post_message',
@@ -48,8 +74,6 @@ server.tool(
   },
   async ({ content, from }) => {
     const result = await httpRequest('POST', `${API_URL}/api/callbacks/post-message`, {
-      invocationId: INVOCATION_ID,
-      callbackToken: CALLBACK_TOKEN,
       content,
       from,
     });
@@ -62,9 +86,43 @@ server.tool(
   'Get recent messages from the Arena chatroom',
   {},
   async () => {
-    const url = `${API_URL}/api/callbacks/thread-context?invocationId=${encodeURIComponent(INVOCATION_ID)}&callbackToken=${encodeURIComponent(CALLBACK_TOKEN)}`;
-    const result = await httpRequest('GET', url);
+    const result = await httpRequest('GET', `${API_URL}/api/agent-snapshot`);
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+// Register file & git tools via extracted modules
+const { safePath } = registerFileTools(server, PROJECT_ROOT);
+registerGitTools(server, PROJECT_ROOT, safePath);
+
+// --- Test tool ---
+
+const BLOCKED_COMMANDS = [/rm\s+-rf/, /mkfs/, /dd\s+if=/, />\s*\/dev/];
+
+server.tool(
+  'arena_run_test',
+  'Run a test command in the project directory. For executing test scripts, linting, or validation commands.',
+  {
+    command: z.string().describe('The test command to run, e.g. "node server.js --test"'),
+  },
+  async ({ command }) => {
+    try {
+      for (const p of BLOCKED_COMMANDS) {
+        if (p.test(command)) {
+          return { content: [{ type: 'text', text: 'Blocked: dangerous command.' }], isError: true };
+        }
+      }
+      const output = execSync(command, {
+        cwd: PROJECT_ROOT,
+        encoding: 'utf8',
+        timeout: 30000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
+      return { content: [{ type: 'text', text: output || '(no output)' }] };
+    } catch (err) {
+      const msg = err.stdout ? `stdout:\n${err.stdout}\nstderr:\n${err.stderr}` : err.message;
+      return { content: [{ type: 'text', text: `Exit code ${err.status || 1}:\n${msg}` }], isError: true };
+    }
   }
 );
 

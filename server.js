@@ -1,190 +1,194 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { getEnv, currentBranch } = require('./lib/env');
+const auth = require('./lib/auth');
+const store = require('./lib/message-store');
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
-
-// Callback credentials for MCP agents
-const invocationId = crypto.randomUUID();
-const callbackToken = crypto.randomUUID();
-const LOG_FILE = path.join(__dirname, 'chatroom.log');
+const MAX_BODY_BYTES = 10 * 1024; // 10KB body limit (P2)
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
 
-// In-memory message store
-const messages = [];
+// Load message history on startup
+store.loadFromLog();
 
-// Agent turn tracking
-let consecutiveAgentTurns = 0;
-
-// Load existing log on startup
-try {
-  const lines = fs.readFileSync(LOG_FILE, 'utf8').split('\n').filter(Boolean);
-  for (const line of lines) {
-    try { messages.push(JSON.parse(line)); } catch {}
-  }
-  console.log(`Loaded ${messages.length} messages from log`);
-} catch {}
-
-// Restore consecutiveAgentTurns from log
-for (let i = messages.length - 1; i >= 0; i--) {
-  if (messages[i].from !== '清风' && messages[i].from !== '明月') break;
-  consecutiveAgentTurns++;
-}
-if (consecutiveAgentTurns > 0) {
-  console.log(`Restored consecutiveAgentTurns: ${consecutiveAgentTurns}`);
-}
-
-function appendLog(msg) {
-  fs.appendFileSync(LOG_FILE, JSON.stringify(msg) + '\n');
-}
-
-function broadcast(wss, msg) {
-  const data = JSON.stringify(msg);
-  for (const client of wss.clients) {
-    if (client.readyState === 1) { // WebSocket.OPEN
-      client.send(data);
-    }
-  }
-}
-
-// HTTP server
-const server = http.createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/') {
-    fs.readFile(INDEX_HTML, (err, data) => {
-      if (err) {
-        res.writeHead(500); res.end('Error loading UI');
+function readBody(req, limit) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    let bytes = 0;
+    let rejected = false;
+    req.on('data', chunk => {
+      bytes += chunk.length;
+      if (bytes > limit && !rejected) {
+        rejected = true;
+        reject(new Error('body_too_large'));
+        req.resume(); // drain remaining data
         return;
       }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(data);
+      if (!rejected) body += chunk;
     });
-  } else if (req.method === 'GET' && req.url === '/api/messages') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(messages));
-  } else if (req.method === 'GET' && req.url === '/api/env') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ...getEnv(), branch: currentBranch() }));
-  } else if (req.method === 'POST' && req.url === '/api/callbacks/post-message') {
-    let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const parsed = JSON.parse(body);
-        const { invocationId: id, callbackToken: token, content, from: sender } = parsed;
-        if (id !== invocationId || token !== callbackToken) {
-          res.writeHead(401, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'unauthorized' }));
-          return;
-        }
-        // Empty content → agent chose to stay silent
-        if (!content || content.trim() === '') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ status: 'silent' }));
-          return;
-        }
-        const agentName = sender || 'agent';
-        console.log(`[agent callback] [${agentName}] ${content}`);
-        const msg = {
-          type: 'chat',
-          from: agentName,
-          content,
-          timestamp: Date.now(),
-        };
-        messages.push(msg);
-        appendLog(msg);
-        broadcast(wss, msg);
-        consecutiveAgentTurns++;
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok' }));
-      } catch (err) {
-        console.error('[callback error]', err.message, 'body:', body);
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'bad request', detail: err.message }));
+    req.on('end', () => { if (!rejected) resolve(body); });
+    req.on('error', reject);
+  });
+}
+
+function jsonResponse(res, code, data) {
+  res.writeHead(code, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+function handleGetIndex(req, res) {
+  fs.readFile(INDEX_HTML, (err, data) => {
+    if (err) { res.writeHead(500); res.end('Error loading UI'); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(data);
+  });
+}
+
+function handleGetMessages(req, res) {
+  jsonResponse(res, 200, store.getMessages());
+}
+
+function handleGetEnv(req, res) {
+  jsonResponse(res, 200, { ...getEnv(), branch: currentBranch() });
+}
+
+function handlePostMessage(req, res) {
+  readBody(req, MAX_BODY_BYTES)
+    .then(body => {
+      const parsed = JSON.parse(body);
+      const { content, from: sender } = parsed;
+      const authResult = auth.authenticate(req, parsed);
+      if (!authResult.ok) {
+        const code = authResult.error === 'token_expired' ? 403 : 401;
+        jsonResponse(res, code, { error: authResult.error });
+        return;
       }
+      if (!content || content.trim() === '') {
+        jsonResponse(res, 200, { status: 'silent' });
+        return;
+      }
+      const agentName = sender || 'agent';
+      console.log(`[agent callback] [${agentName}] ${content}`);
+      const msg = store.addMessage({ type: 'chat', from: agentName, content });
+      broadcast(msg);
+      jsonResponse(res, 200, { status: 'ok', seq: msg.seq });
+    })
+    .catch(err => {
+      const code = err.message === 'body_too_large' ? 413 : 400;
+      jsonResponse(res, code, { error: err.message });
     });
-  } else if (req.method === 'GET' && req.url === '/api/agent-status') {
-    const lastMsg = messages.length > 0 ? messages[messages.length - 1] : null;
-    // Find last human message id (timestamp)
-    let lastHumanMsgId = null;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].from !== '清风' && messages[i].from !== '明月') {
-        lastHumanMsgId = messages[i].timestamp;
-        break;
-      }
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      consecutiveAgentTurns,
-      lastHumanMsgId,
-      lastMsgId: lastMsg ? lastMsg.timestamp : null,
-      totalMessages: messages.length,
-    }));
-  } else if (req.method === 'GET' && req.url?.startsWith('/api/callbacks/thread-context')) {
-    const url = new URL(req.url, `http://localhost:${PORT}`);
-    const id = url.searchParams.get('invocationId');
-    const token = url.searchParams.get('callbackToken');
-    if (id !== invocationId || token !== callbackToken) {
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unauthorized' }));
-      return;
-    }
-    const recent = messages.slice(-50);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ messages: recent }));
+}
+
+function handleGetSnapshot(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const authResult = auth.authenticate(req, {});
+  if (!authResult.ok) {
+    const code = authResult.error === 'token_expired' ? 403 : 401;
+    jsonResponse(res, code, { error: authResult.error });
+    return;
+  }
+  const since = parseInt(url.searchParams.get('since') || '0', 10);
+  jsonResponse(res, 200, store.getSnapshot(since));
+}
+
+function handleGetAgentStatus(req, res) {
+  jsonResponse(res, 200, store.getSnapshot(0));
+}
+
+// Issue a WS session token for authenticated clients
+function handleGetWsToken(req, res) {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const identity = url.searchParams.get('identity') || 'human';
+  const token = auth.issueWsSession(identity);
+  jsonResponse(res, 200, { token });
+}
+
+// --- Route dispatch ---
+
+const routes = {
+  'GET /': handleGetIndex,
+  'GET /api/messages': handleGetMessages,
+  'GET /api/env': handleGetEnv,
+  'GET /api/agent-status': handleGetAgentStatus,
+  'GET /api/ws-token': handleGetWsToken,
+};
+
+const server = http.createServer((req, res) => {
+  const method = req.method;
+  const urlPath = (req.url || '/').split('?')[0];
+  const key = `${method} ${urlPath}`;
+
+  if (routes[key]) {
+    routes[key](req, res);
+  } else if (method === 'POST' && urlPath === '/api/callbacks/post-message') {
+    handlePostMessage(req, res);
+  } else if (method === 'GET' && urlPath === '/api/agent-snapshot') {
+    handleGetSnapshot(req, res);
+  } else if (method === 'GET' && urlPath === '/api/callbacks/thread-context') {
+    handleGetSnapshot(req, res); // backward compat, same as snapshot
   } else {
-    res.writeHead(404);
-    res.end('Not Found');
+    res.writeHead(404); res.end('Not Found');
   }
 });
 
-// WebSocket server
+// --- WebSocket ---
+
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (ws) => {
-  // Send history
-  ws.send(JSON.stringify({ type: 'history', messages }));
+function broadcast(msg) {
+  const data = JSON.stringify(msg);
+  for (const client of wss.clients) {
+    if (client.readyState === 1) client.send(data);
+  }
+}
+
+wss.on('connection', (ws, req) => {
+  // Auth: check session token from query string
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const sessionToken = url.searchParams.get('token');
+  const session = sessionToken ? auth.validateWsSession(sessionToken) : { ok: false };
+
+  // Tag connection with identity (defaults to 'anonymous' if no valid token)
+  ws.identity = session.ok ? session.identity : 'anonymous';
+
+  ws.send(JSON.stringify({ type: 'history', messages: store.getMessages() }));
 
   ws.on('message', (raw) => {
     let msg;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
+    try { msg = JSON.parse(raw); } catch { return; }
+
+    // Server-side identity enforcement: override client-reported 'from'
+    // Agent names can only be used by authenticated agent sessions
+    if (store.isAgent(msg.from) && ws.identity !== 'agent') {
+      msg.from = ws.identity === 'human' ? (msg.from || 'anonymous') : 'anonymous';
+      if (store.isAgent(msg.from)) msg.from = 'anonymous';
     }
 
-    // Ensure required fields
-    msg.timestamp = msg.timestamp || Date.now();
-    msg.type = msg.type || 'chat';
     msg.from = msg.from || 'anonymous';
-
-    // Human message resets agent turn counter
-    if (msg.from !== '清风' && msg.from !== '明月') {
-      consecutiveAgentTurns = 0;
-    }
-
-    messages.push(msg);
-    appendLog(msg);
-    broadcast(wss, msg);
+    const stored = store.addMessage(msg);
+    broadcast(stored);
   });
 });
 
+// --- Start ---
+
 function start() {
   server.listen(PORT, () => {
+    const creds = auth.getCredentials();
     console.log(`Arena chatroom running at http://localhost:${PORT}`);
     console.log(`Environment: ${getEnv().environment} | Branch: ${currentBranch()}`);
-    console.log(`\n--- MCP Callback Credentials ---`);
-    console.log(`ARENA_INVOCATION_ID=${invocationId}`);
-    console.log(`ARENA_CALLBACK_TOKEN=${callbackToken}`);
-    console.log(`--------------------------------\n`);
+    console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
+    console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
+    console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);
+    console.log(`Auth header: Authorization: Bearer ${creds.invocationId}:${creds.callbackToken}:${creds.jti}`);
+    console.log(`--------------------------------------------------\n`);
   });
 }
 
-module.exports = { start, server, wss, messages, broadcast };
+module.exports = { start, server, wss, broadcast };
 
-// Start if run directly
 if (require.main === module) {
   start();
 }
