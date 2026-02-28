@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 
 const ARENA_API_URL = process.env.ARENA_API_URL || 'http://localhost:3000';
 const SERVER_CMD = process.env.ARENA_SERVER_CMD || 'node';
@@ -12,6 +15,7 @@ let runnerProc = null;
 let shuttingDown = false;
 let invocationId = '';
 let callbackToken = '';
+const CRED_FILE = path.join(os.tmpdir(), `arena-creds-${process.pid}.json`);
 
 function log(msg) {
   process.stdout.write(`[resident] ${msg}\n`);
@@ -20,17 +24,27 @@ function log(msg) {
 function spawnServer() {
   log(`starting server: ${SERVER_CMD} ${SERVER_ARGS.join(' ')}`);
   serverProc = spawn(SERVER_CMD, SERVER_ARGS, {
-    env: process.env,
+    env: { ...process.env, ARENA_CREDENTIALS_FILE: CRED_FILE },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
   serverProc.stdout.on('data', (d) => {
     const text = d.toString();
     process.stdout.write(`[server] ${text}`);
-    const inv = text.match(/ARENA_INVOCATION_ID=([a-zA-Z0-9-]+)/);
-    const tok = text.match(/ARENA_CALLBACK_TOKEN=([a-zA-Z0-9-]+)/);
-    if (inv) invocationId = inv[1];
-    if (tok) callbackToken = tok[1];
+    if (!invocationId || !callbackToken) {
+      try {
+        const file = fs.readFileSync(CRED_FILE, 'utf8');
+        const cred = JSON.parse(file);
+        invocationId = cred.invocationId || invocationId;
+        callbackToken = cred.callbackToken || callbackToken;
+      } catch {}
+    }
+    if (!invocationId || !callbackToken) {
+      const inv = text.match(/ARENA_INVOCATION_ID=([a-zA-Z0-9-]+)/);
+      const tok = text.match(/ARENA_CALLBACK_TOKEN=([a-zA-Z0-9-]+)/);
+      if (inv) invocationId = inv[1];
+      if (tok) callbackToken = tok[1];
+    }
     if (!runnerProc && invocationId && callbackToken) spawnRunner();
   });
   serverProc.stderr.on('data', (d) => process.stderr.write(`[server err] ${d}`));
@@ -69,7 +83,12 @@ function shutdown() {
   log('shutting down resident stack...');
   if (runnerProc) runnerProc.kill('SIGTERM');
   if (serverProc) serverProc.kill('SIGTERM');
-  setTimeout(() => process.exit(0), 800);
+  setTimeout(() => {
+    if (runnerProc && !runnerProc.killed) runnerProc.kill('SIGKILL');
+    if (serverProc && !serverProc.killed) serverProc.kill('SIGKILL');
+    try { fs.unlinkSync(CRED_FILE); } catch {}
+    process.exit(0);
+  }, 1200);
 }
 
 process.on('SIGINT', shutdown);

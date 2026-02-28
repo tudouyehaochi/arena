@@ -148,7 +148,11 @@ async function main() {
     apiUrl: API_URL,
     authHeader: AUTH_HEADER,
     onStateChange: (state) => console.log(`[listen] ${state}`),
-    onMessage: (msg) => { const from = msg?.from || ''; if (msg?.type === 'chat' && !AGENTS.has(from)) wakePolling(`chat from ${from}`); },
+    onMessage: (msg) => {
+      const from = msg?.from || '';
+      if (msg?.type === 'history' || msg?.type !== 'chat') return;
+      if (!AGENTS.has(from)) wakePolling(`chat from ${from}`);
+    },
   });
 
   const shutdown = async () => {

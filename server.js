@@ -101,6 +101,18 @@ wss.on('connection', (ws, req) => {
 function start() {
   server.listen(PORT, () => {
     const creds = auth.getCredentials();
+    const credsFile = process.env.ARENA_CREDENTIALS_FILE;
+    if (credsFile) {
+      try {
+        fs.writeFileSync(credsFile, JSON.stringify({
+          invocationId: creds.invocationId,
+          callbackToken: creds.callbackToken,
+          jti: creds.jti,
+        }));
+      } catch (e) {
+        console.error(`Failed to write credentials file: ${e.message}`);
+      }
+    }
     console.log(`Arena chatroom running at http://localhost:${PORT}`);
     console.log(`Environment: ${getEnv().environment} | Branch: ${currentBranch()}`);
     console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
