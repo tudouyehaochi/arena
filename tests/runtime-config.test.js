@@ -6,8 +6,8 @@ test('resolvePort: prod defaults to 3001', () => {
   assert.equal(resolvePort({ environment: 'prod', branch: 'dev' }), 3001);
 });
 
-test('resolvePort: main branch defaults to 3001', () => {
-  assert.equal(resolvePort({ environment: 'dev', branch: 'main' }), 3001);
+test('resolvePort: master branch defaults to 3001', () => {
+  assert.equal(resolvePort({ environment: 'dev', branch: 'master' }), 3001);
 });
 
 test('resolvePort: dev non-main defaults to 3000', () => {
