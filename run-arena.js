@@ -6,8 +6,12 @@ const { buildPrompt } = require('./lib/prompt-builder');
 const memory = require('./lib/session-memory');
 const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
+const { currentBranch } = require('./lib/env');
+const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
 
-const API_URL = process.env.ARENA_API_URL || 'http://localhost:3000';
+const DEFAULT_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
+const DEFAULT_PORT = resolvePort({ port: process.env.PORT, environment: DEFAULT_ENV, branch: currentBranch() });
+const API_URL = process.env.ARENA_API_URL || `http://localhost:${DEFAULT_PORT}`;
 const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
 const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
 const POLL_INTERVAL = parseInt(process.env.ARENA_POLL_INTERVAL || '5000', 10);

@@ -3,8 +3,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { currentBranch } = require('./lib/env');
+const { inferEnvironment, resolvePort, resolveApiUrl } = require('./lib/runtime-config');
 
-const ARENA_API_URL = process.env.ARENA_API_URL || 'http://localhost:3000';
 const SERVER_CMD = process.env.ARENA_SERVER_CMD || 'node';
 const SERVER_ARGS = process.env.ARENA_SERVER_ARGS ? process.env.ARENA_SERVER_ARGS.split(' ') : ['server.js'];
 const RUNNER_CMD = process.env.ARENA_RUNNER_CMD || 'node';
@@ -16,15 +17,37 @@ let shuttingDown = false;
 let invocationId = '';
 let callbackToken = '';
 const CRED_FILE = path.join(os.tmpdir(), `arena-creds-${process.pid}.json`);
+const cli = parseArgs(process.argv.slice(2));
+const branch = currentBranch();
+const runtimeEnv = inferEnvironment(cli.env);
+const runtimePort = resolvePort({ port: cli.port, environment: runtimeEnv, branch });
+const runtimeApiUrl = resolveApiUrl({ apiUrl: cli.apiUrl || process.env.ARENA_API_URL, port: runtimePort });
 
 function log(msg) {
   process.stdout.write(`[resident] ${msg}\n`);
 }
 
+function parseArgs(args) {
+  const out = { env: '', port: '', apiUrl: '' };
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === '--env' && args[i + 1]) out.env = args[++i];
+    else if (a === '--port' && args[i + 1]) out.port = args[++i];
+    else if (a === '--api-url' && args[i + 1]) out.apiUrl = args[++i];
+  }
+  return out;
+}
+
 function spawnServer() {
   log(`starting server: ${SERVER_CMD} ${SERVER_ARGS.join(' ')}`);
+  log(`runtime env=${runtimeEnv} branch=${branch} port=${runtimePort} api=${runtimeApiUrl}`);
   serverProc = spawn(SERVER_CMD, SERVER_ARGS, {
-    env: { ...process.env, ARENA_CREDENTIALS_FILE: CRED_FILE },
+    env: {
+      ...process.env,
+      PORT: String(runtimePort),
+      ARENA_ENVIRONMENT: runtimeEnv,
+      ARENA_CREDENTIALS_FILE: CRED_FILE,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -61,7 +84,8 @@ function spawnServer() {
 function spawnRunner() {
   const env = {
     ...process.env,
-    ARENA_API_URL,
+    ARENA_API_URL: runtimeApiUrl,
+    ARENA_ENVIRONMENT: runtimeEnv,
     ARENA_INVOCATION_ID: invocationId,
     ARENA_CALLBACK_TOKEN: callbackToken,
   };

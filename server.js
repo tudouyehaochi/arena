@@ -3,11 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const { getEnv, currentBranch } = require('./lib/env');
+const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
 const auth = require('./lib/auth');
 const store = require('./lib/message-store');
 const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } = require('./lib/route-handlers');
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const BRANCH = currentBranch();
+const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
+const PORT = resolvePort({ port: process.env.PORT, environment: RUNTIME_ENV, branch: BRANCH });
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
 
 // Load message history on startup
@@ -26,7 +29,7 @@ function handleGetMessages(req, res) {
 }
 
 function handleGetEnv(req, res) {
-  jsonResponse(res, 200, { ...getEnv(), branch: currentBranch() });
+  jsonResponse(res, 200, { ...getEnv(), runtimeEnvironment: RUNTIME_ENV, branch: BRANCH, port: PORT });
 }
 
 function handleGetAgentStatus(req, res) {
@@ -114,7 +117,7 @@ function start() {
       }
     }
     console.log(`Arena chatroom running at http://localhost:${PORT}`);
-    console.log(`Environment: ${getEnv().environment} | Branch: ${currentBranch()}`);
+    console.log(`Environment: ${RUNTIME_ENV} | Branch: ${BRANCH}`);
     console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
     console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
     console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);
