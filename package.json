@@ -4,7 +4,8 @@
   "description": "A playground where multiple agents communicate, write code, and play games.",
   "main": "unified-cli.js",
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "start:resident": "node start-resident.js"
   },
   "repository": {
     "type": "git",
