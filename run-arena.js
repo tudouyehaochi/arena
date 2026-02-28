@@ -5,6 +5,7 @@ const fs = require('fs');
 const { buildPrompt } = require('./lib/prompt-builder');
 const memory = require('./lib/session-memory');
 const { startRealtimeListener } = require('./lib/realtime-listener');
+const { createAgentRuntime } = require('./lib/agent-runtime');
 
 const API_URL = process.env.ARENA_API_URL || 'http://localhost:3000';
 const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
@@ -22,10 +23,6 @@ if (!INVOCATION_ID || !CALLBACK_TOKEN) {
   console.error('Missing ARENA_INVOCATION_ID or ARENA_CALLBACK_TOKEN');
   process.exit(1);
 }
-
-const mcpConfig = JSON.stringify({ mcpServers: { arena: { command: 'node', args: [MCP_SCRIPT], env: {
-  ARENA_API_URL: API_URL, ARENA_INVOCATION_ID: INVOCATION_ID, ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN,
-} } } });
 
 function httpGet(urlStr) {
   return new Promise((resolve, reject) => {
@@ -76,31 +73,13 @@ function pickAgent(recentMessages) {
 }
 
 let sessionSummary = memory.loadSummary();
+const agentRuntime = createAgentRuntime({ API_URL, INVOCATION_ID, CALLBACK_TOKEN, runCommand, MCP_SCRIPT });
+
 async function invokeAgent(agent, recentMessages) {
   const prompt = buildPrompt(agent, recentMessages, { sessionSummary });
   logInvokeMetrics(agent, prompt, recentMessages, recentMessages.length <= 2);
-  if (agent === '清风') return runCommand('claude', [
-    '-p', prompt, '--output-format', 'stream-json', '--verbose', '--mcp-config', mcpConfig,
-    '--allowedTools', 'mcp__arena__arena_get_context,mcp__arena__arena_post_message,mcp__arena__arena_read_file,mcp__arena__arena_write_file,mcp__arena__arena_list_files,mcp__arena__arena_run_git,mcp__arena__arena_git_commit,mcp__arena__arena_run_test',
-  ], '清风 (Claude)');
-  return runCommand('codex', ['exec', prompt, '--json'], '明月 (Codex)');
-}
-
-let codexMcpRegistered = false;
-async function setupCodexMcp() {
-  if (codexMcpRegistered) return;
-  try {
-    await runCommand('codex', [
-      'mcp', 'add', 'arena', '--env', `ARENA_API_URL=${API_URL}`, '--env', `ARENA_INVOCATION_ID=${INVOCATION_ID}`,
-      '--env', `ARENA_CALLBACK_TOKEN=${CALLBACK_TOKEN}`, '--', 'node', MCP_SCRIPT,
-    ], '明月 MCP add');
-    codexMcpRegistered = true;
-  } catch (err) { console.error('Failed to register MCP with Codex:', err.message); }
-}
-async function cleanupCodexMcp() {
-  if (!codexMcpRegistered) return;
-  try { await runCommand('codex', ['mcp', 'remove', 'arena'], '明月 MCP remove'); } catch {}
-  codexMcpRegistered = false;
+  const rt = agentRuntime[agent];
+  return runCommand(rt.cmd, rt.buildArgs(prompt), `${agent} (${rt.cmd === 'claude' ? 'Claude' : 'Codex'})`);
 }
 
 let lastSeenCursor = null;
@@ -145,7 +124,7 @@ async function pollOnce() {
   if (promptMessages.length !== recentMessages.length) console.log(`[poll] Rebuild context using summary file: ${memory.SUMMARY_PATH}`);
 
   const agent = pickAgent(recentMessages);
-  if (agent === '明月' && !codexMcpRegistered) {
+  if (!agentRuntime[agent].canRun()) {
     console.log('[poll] 明月 selected but Codex unavailable, fallback to 清风');
     await invokeAgent('清风', promptMessages);
     invokeCount++;
@@ -161,7 +140,10 @@ async function pollOnce() {
 async function main() {
   console.log('=== Arena Agent Runner ===');
   console.log(`API: ${API_URL} | Poll: ${POLL_INTERVAL}ms | Max turns: ${MAX_AGENT_TURNS}`);
-  await setupCodexMcp();
+  await Promise.all([
+    agentRuntime.清风.setup().catch((e) => console.error('清风 MCP setup failed:', e.message)),
+    agentRuntime.明月.setup().catch((e) => console.error('明月 MCP setup failed:', e.message)),
+  ]);
   const listener = startRealtimeListener({
     apiUrl: API_URL,
     authHeader: AUTH_HEADER,
@@ -173,7 +155,10 @@ async function main() {
     console.log('\nShutting down...');
     running = false;
     listener.stop();
-    await cleanupCodexMcp();
+    await Promise.all([
+      agentRuntime.清风.cleanup().catch(() => {}),
+      agentRuntime.明月.cleanup().catch(() => {}),
+    ]);
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
