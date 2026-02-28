@@ -1,2 +1,4 @@
 node_modules/
 chatroom.log
+agent-metrics.log
+session-summary.json

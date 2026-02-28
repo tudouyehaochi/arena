@@ -46,7 +46,7 @@
 <div id="messages"></div>
 
 <div id="input-area">
-  <input id="username" value="user" placeholder="Name" />
+  <input id="username" value="镇元子" placeholder="Name" />
   <input id="msg-input" placeholder="Type a message..." autocomplete="off" />
   <button id="send-btn">Send</button>
 </div>
@@ -63,15 +63,26 @@
   let ws;
   let reconnectTimer;
 
+  const savedName = localStorage.getItem('arena_name');
+  if (savedName) usernameInput.value = savedName;
+  usernameInput.addEventListener('change', () => {
+    localStorage.setItem('arena_name', usernameInput.value || '镇元子');
+  });
+
   // Fetch env info
   fetch('/api/env').then(r => r.json()).then(info => {
     envBadge.textContent = info.environment + ' / ' + info.branch;
     envBadge.className = 'env-badge env-' + info.environment;
   }).catch(() => {});
 
-  function connect() {
+  async function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(proto + '//' + location.host);
+    let wsUrl = proto + '//' + location.host;
+    try {
+      const t = await fetch('/api/ws-token').then(r => r.json());
+      if (t && t.token) wsUrl += '?token=' + encodeURIComponent(t.token);
+    } catch {}
+    ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
       statusEl.textContent = 'connected';
@@ -110,12 +121,13 @@
 
       const meta = document.createElement('div');
       meta.className = 'meta';
-      const time = new Date(msg.timestamp).toLocaleTimeString();
-      meta.innerHTML = '<span class="name">' + escapeHtml(msg.from) + '</span> &middot; ' + time;
+      const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '--:--:--';
+      meta.innerHTML = '<span class="name">' + escapeHtml(msg.from || '镇元子') + '</span> &middot; ' + time;
       div.appendChild(meta);
 
       const text = document.createElement('div');
-      text.textContent = msg.text;
+      text.style.whiteSpace = 'pre-wrap';
+      text.textContent = msg.text || msg.content || '';
       div.appendChild(text);
 
       if (msg.type === 'approval-request' && !msg._resolved) {
@@ -157,7 +169,7 @@
   function sendMsg(type, text) {
     if (!ws || ws.readyState !== 1) return;
     ws.send(JSON.stringify({
-      from: usernameInput.value || 'user',
+      from: usernameInput.value || '镇元子',
       text: text,
       type: type || 'chat',
       timestamp: Date.now()

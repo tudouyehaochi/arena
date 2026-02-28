@@ -3,95 +3,131 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const { getEnv, currentBranch } = require('./lib/env');
+const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
+const auth = require('./lib/auth');
+const store = require('./lib/message-store');
+const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } = require('./lib/route-handlers');
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
-const LOG_FILE = path.join(__dirname, 'chatroom.log');
+const BRANCH = currentBranch();
+const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
+const PORT = resolvePort({ port: process.env.PORT, environment: RUNTIME_ENV, branch: BRANCH });
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
 
-// In-memory message store
-const messages = [];
+// Load message history on startup
+store.loadFromLog();
 
-// Load existing log on startup
-try {
-  const lines = fs.readFileSync(LOG_FILE, 'utf8').split('\n').filter(Boolean);
-  for (const line of lines) {
-    try { messages.push(JSON.parse(line)); } catch {}
-  }
-  console.log(`Loaded ${messages.length} messages from log`);
-} catch {}
-
-function appendLog(msg) {
-  fs.appendFileSync(LOG_FILE, JSON.stringify(msg) + '\n');
+function handleGetIndex(req, res) {
+  fs.readFile(INDEX_HTML, (err, data) => {
+    if (err) { res.writeHead(500); res.end('Error loading UI'); return; }
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(data);
+  });
 }
 
-function broadcast(wss, msg) {
-  const data = JSON.stringify(msg);
-  for (const client of wss.clients) {
-    if (client.readyState === 1) { // WebSocket.OPEN
-      client.send(data);
-    }
-  }
+function handleGetMessages(req, res) {
+  jsonResponse(res, 200, store.getMessages());
 }
 
-// HTTP server
+function handleGetEnv(req, res) {
+  jsonResponse(res, 200, { ...getEnv(), runtimeEnvironment: RUNTIME_ENV, branch: BRANCH, port: PORT });
+}
+
+function handleGetAgentStatus(req, res) {
+  jsonResponse(res, 200, store.getSnapshot(0));
+}
+
+// --- Route dispatch ---
+
+const routes = {
+  'GET /': handleGetIndex,
+  'GET /api/messages': handleGetMessages,
+  'GET /api/env': handleGetEnv,
+  'GET /api/agent-status': handleGetAgentStatus,
+  'GET /api/ws-token': handleGetWsToken,
+};
+
 const server = http.createServer((req, res) => {
-  if (req.method === 'GET' && req.url === '/') {
-    fs.readFile(INDEX_HTML, (err, data) => {
-      if (err) {
-        res.writeHead(500); res.end('Error loading UI');
-        return;
-      }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(data);
-    });
-  } else if (req.method === 'GET' && req.url === '/api/messages') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(messages));
-  } else if (req.method === 'GET' && req.url === '/api/env') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ...getEnv(), branch: currentBranch() }));
+  const method = req.method;
+  const urlPath = (req.url || '/').split('?')[0];
+  const key = `${method} ${urlPath}`;
+
+  if (routes[key]) {
+    routes[key](req, res);
+  } else if (method === 'POST' && urlPath === '/api/callbacks/post-message') {
+    handlePostMessage(req, res, broadcast);
+  } else if (method === 'GET' && urlPath === '/api/agent-snapshot') {
+    // Auth check first, then decide full vs summary
+    handleGetSnapshot(req, res, PORT);
+  } else if (method === 'GET' && urlPath === '/api/callbacks/thread-context') {
+    handleGetSnapshot(req, res, PORT);
   } else {
-    res.writeHead(404);
-    res.end('Not Found');
+    res.writeHead(404); res.end('Not Found');
   }
 });
 
-// WebSocket server
+// --- WebSocket ---
+
 const wss = new WebSocketServer({ server });
 
-wss.on('connection', (ws) => {
-  // Send history
-  ws.send(JSON.stringify({ type: 'history', messages }));
+function broadcast(msg) {
+  const data = JSON.stringify(msg);
+  for (const client of wss.clients) {
+    if (client.readyState === 1) client.send(data);
+  }
+}
+
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const sessionToken = url.searchParams.get('token');
+  const session = sessionToken ? auth.validateWsSession(sessionToken) : { ok: false };
+  ws.identity = session.ok ? session.identity : 'anonymous';
+
+  ws.send(JSON.stringify({ type: 'history', messages: store.getMessages() }));
 
   ws.on('message', (raw) => {
     let msg;
-    try {
-      msg = JSON.parse(raw);
-    } catch {
-      return;
+    try { msg = JSON.parse(raw); } catch { return; }
+
+    if (store.isAgent(msg.from) && ws.identity !== 'agent') {
+      msg.from = ws.identity === 'human' ? (msg.from || 'anonymous') : 'anonymous';
+      if (store.isAgent(msg.from)) msg.from = 'anonymous';
     }
 
-    // Ensure required fields
-    msg.timestamp = msg.timestamp || Date.now();
-    msg.type = msg.type || 'chat';
     msg.from = msg.from || 'anonymous';
-
-    messages.push(msg);
-    appendLog(msg);
-    broadcast(wss, msg);
+    const stored = store.addMessage(msg);
+    broadcast(stored);
   });
 });
 
+// --- Start ---
+
 function start() {
   server.listen(PORT, () => {
+    const creds = auth.getCredentials();
+    const credsFile = process.env.ARENA_CREDENTIALS_FILE;
+    if (credsFile) {
+      try {
+        fs.writeFileSync(credsFile, JSON.stringify({
+          invocationId: creds.invocationId,
+          callbackToken: creds.callbackToken,
+          jti: creds.jti,
+        }));
+      } catch (e) {
+        console.error(`Failed to write credentials file: ${e.message}`);
+      }
+    }
     console.log(`Arena chatroom running at http://localhost:${PORT}`);
-    console.log(`Environment: ${getEnv().environment} | Branch: ${currentBranch()}`);
+    console.log(`Environment: ${RUNTIME_ENV} | Branch: ${BRANCH}`);
+    console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
+    console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
+    console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);
+    console.log(`Auth header: Authorization: Bearer ${creds.invocationId}:${creds.callbackToken}:${creds.jti}`);
+    console.log(`--------------------------------------------------\n`);
   });
 }
 
-module.exports = { start, server, wss, messages, broadcast };
+module.exports = { start, server, wss, broadcast };
 
-// Start if run directly
 if (require.main === module) {
   start();
 }
