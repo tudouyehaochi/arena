@@ -8,7 +8,6 @@ const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
 const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
-
 const DEFAULT_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
 const DEFAULT_PORT = resolvePort({ port: process.env.PORT, environment: DEFAULT_ENV, branch: currentBranch() });
 const API_URL = process.env.ARENA_API_URL || `http://localhost:${DEFAULT_PORT}`;
@@ -19,15 +18,14 @@ const MAX_AGENT_TURNS = 3;
 const REQUEST_TIMEOUT_MS = 10000;
 const SESSION_REBUILD_EVERY = parseInt(process.env.ARENA_SESSION_REBUILD_EVERY || '6', 10);
 const METRICS_LOG = path.join(__dirname, 'agent-metrics.log');
+const STATE_PATH = path.join(__dirname, 'runner-state.json');
 const MCP_SCRIPT = path.join(__dirname, 'agent-arena-mcp.js');
 const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 const AGENTS = new Set(['清风', '明月']);
-
 if (!INVOCATION_ID || !CALLBACK_TOKEN) {
   console.error('Missing ARENA_INVOCATION_ID or ARENA_CALLBACK_TOKEN');
   process.exit(1);
 }
-
 function httpGet(urlStr) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -46,7 +44,6 @@ function httpGet(urlStr) {
     req.on('error', reject);
   });
 }
-
 function runCommand(cmd, args, label) {
   return new Promise((resolve, reject) => {
     console.log(`\n=== ${label} ===\n`);
@@ -59,12 +56,16 @@ function runCommand(cmd, args, label) {
     child.on('error', reject);
   });
 }
-
 function logInvokeMetrics(agent, prompt, recentMessages, summaryOnly) {
   const row = { ts: new Date().toISOString(), agent, promptChars: prompt.length, recentCount: recentMessages.length, summaryOnly };
   fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
 }
-
+function loadRunnerState() {
+  try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return {}; }
+}
+function saveRunnerState(state) {
+  try { fs.writeFileSync(STATE_PATH, JSON.stringify(state) + '\n', 'utf8'); } catch {}
+}
 function pickAgent(recentMessages) {
   if (recentMessages.length === 0) return '清风';
   const lastMsg = recentMessages[recentMessages.length - 1];
@@ -75,23 +76,19 @@ function pickAgent(recentMessages) {
   if (lastMsg.from === '明月') return '清风';
   return '清风';
 }
-
 let sessionSummary = memory.loadSummary();
 const agentRuntime = createAgentRuntime({ API_URL, INVOCATION_ID, CALLBACK_TOKEN, runCommand, MCP_SCRIPT });
-
 async function invokeAgent(agent, recentMessages) {
   const prompt = buildPrompt(agent, recentMessages, { sessionSummary });
   logInvokeMetrics(agent, prompt, recentMessages, recentMessages.length <= 2);
   const rt = agentRuntime[agent];
   return runCommand(rt.cmd, rt.buildArgs(prompt), `${agent} (${rt.cmd === 'claude' ? 'Claude' : 'Codex'})`);
 }
-
 let lastSeenCursor = null;
 let running = true;
 let invokeCount = 0;
-let lastHandledHumanSeq = null;
+let lastHandledHumanSeq = loadRunnerState().lastHandledHumanSeq || null;
 let wakeResolver = null;
-
 function wakePolling(reason) {
   if (!wakeResolver) return;
   const fn = wakeResolver;
@@ -105,7 +102,6 @@ function waitForNextTick(ms) {
     wakeResolver = () => { clearTimeout(timer); resolve(); };
   });
 }
-
 async function pollOnce() {
   const since = lastSeenCursor ? `?since=${lastSeenCursor}` : '';
   const snapshot = await httpGet(`${API_URL}/api/agent-snapshot${since}`);
@@ -123,24 +119,18 @@ async function pollOnce() {
   }
   if (snapshot.consecutiveAgentTurns >= MAX_AGENT_TURNS) return console.log(`[poll] Agent turns ${snapshot.consecutiveAgentTurns} >= ${MAX_AGENT_TURNS}, silent`);
   if (snapshot.lastHumanMsgSeq && snapshot.lastHumanMsgSeq === lastHandledHumanSeq) return console.log(`[poll] Human seq ${snapshot.lastHumanMsgSeq} already handled`);
-
   const promptMessages = (invokeCount > 0 && invokeCount % SESSION_REBUILD_EVERY === 0) ? recentMessages.slice(-2) : recentMessages;
   if (promptMessages.length !== recentMessages.length) console.log(`[poll] Rebuild context using summary file: ${memory.SUMMARY_PATH}`);
-
   const agent = pickAgent(recentMessages);
-  if (!agentRuntime[agent].canRun()) {
-    console.log('[poll] 明月 selected but Codex unavailable, fallback to 清风');
-    await invokeAgent('清风', promptMessages);
-    invokeCount++;
-    if (snapshot.lastHumanMsgSeq) lastHandledHumanSeq = snapshot.lastHumanMsgSeq;
-    return;
-  }
+  if (!agentRuntime[agent].canRun()) throw new Error(`${agent} runtime unavailable`);
   console.log(`[poll] New activity. Turns: ${snapshot.consecutiveAgentTurns}. Agent: ${agent}`);
   await invokeAgent(agent, promptMessages);
   invokeCount++;
-  if (snapshot.lastHumanMsgSeq) lastHandledHumanSeq = snapshot.lastHumanMsgSeq;
+  if (snapshot.lastHumanMsgSeq) {
+    lastHandledHumanSeq = snapshot.lastHumanMsgSeq;
+    saveRunnerState({ lastHandledHumanSeq });
+  }
 }
-
 async function main() {
   console.log('=== Arena Agent Runner ===');
   console.log(`API: ${API_URL} | Poll: ${POLL_INTERVAL}ms | Max turns: ${MAX_AGENT_TURNS}`);
@@ -158,7 +148,6 @@ async function main() {
       if (!AGENTS.has(from)) wakePolling(`chat from ${from}`);
     },
   });
-
   const shutdown = async () => {
     console.log('\nShutting down...');
     running = false;
@@ -171,7 +160,6 @@ async function main() {
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
-
   let errors = 0;
   while (running) {
     try { await pollOnce(); errors = 0; }
@@ -185,5 +173,4 @@ async function main() {
     await waitForNextTick(POLL_INTERVAL);
   }
 }
-
 main().catch(err => { console.error('Fatal:', err); process.exit(1); });
