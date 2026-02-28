@@ -21,7 +21,7 @@ const cli = parseArgs(process.argv.slice(2));
 const branch = currentBranch();
 const runtimeEnv = inferEnvironment(cli.env);
 const runtimePort = resolvePort({ port: cli.port, environment: runtimeEnv, branch });
-const runtimeApiUrl = resolveApiUrl({ apiUrl: cli.apiUrl || process.env.ARENA_API_URL, port: runtimePort });
+const runtimeApiUrl = resolveApiUrl({ apiUrl: cli.apiUrl, port: runtimePort });
 const LOCK_FILE = path.join(os.tmpdir(), `arena-resident-${runtimePort}.lock`);
 
 function isPidRunning(pid) {
