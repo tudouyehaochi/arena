@@ -22,6 +22,39 @@ const branch = currentBranch();
 const runtimeEnv = inferEnvironment(cli.env);
 const runtimePort = resolvePort({ port: cli.port, environment: runtimeEnv, branch });
 const runtimeApiUrl = resolveApiUrl({ apiUrl: cli.apiUrl || process.env.ARENA_API_URL, port: runtimePort });
+const LOCK_FILE = path.join(os.tmpdir(), `arena-resident-${runtimePort}.lock`);
+
+function isPidRunning(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function acquireLock() {
+  try {
+    const existing = fs.readFileSync(LOCK_FILE, 'utf8');
+    const lock = JSON.parse(existing);
+    if (isPidRunning(lock.pid)) {
+      throw new Error(`port ${runtimePort} already owned by pid ${lock.pid}`);
+    }
+  } catch (e) {
+    if (!String(e.message || '').includes('ENOENT')) {
+      throw e;
+    }
+  }
+  const content = {
+    pid: process.pid,
+    port: runtimePort,
+    branch,
+    env: runtimeEnv,
+    startedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(LOCK_FILE, `${JSON.stringify(content)}\n`, 'utf8');
+}
 
 function log(msg) {
   process.stdout.write(`[resident] ${msg}\n`);
@@ -111,11 +144,19 @@ function shutdown() {
     if (runnerProc && !runnerProc.killed) runnerProc.kill('SIGKILL');
     if (serverProc && !serverProc.killed) serverProc.kill('SIGKILL');
     try { fs.unlinkSync(CRED_FILE); } catch {}
+    try { fs.unlinkSync(LOCK_FILE); } catch {}
     process.exit(0);
   }, 1200);
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+process.on('exit', () => { try { fs.unlinkSync(LOCK_FILE); } catch {} });
 
+try {
+  acquireLock();
+} catch (e) {
+  log(`failed to start: ${e.message}`);
+  process.exit(1);
+}
 spawnServer();
