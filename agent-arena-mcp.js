@@ -21,6 +21,37 @@ if (!INVOCATION_ID || !CALLBACK_TOKEN) {
 
 const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 
+function normalizeMessage(msg) {
+  return {
+    from: msg?.from || '镇元子',
+    content: String(msg?.content ?? msg?.text ?? '').trim(),
+    seq: msg?.seq || null,
+    timestamp: msg?.timestamp || null,
+  };
+}
+
+function summarizeSnapshot(snapshot) {
+  const messages = (snapshot.messages || []).map(normalizeMessage);
+  const recent = messages.slice(-4).map(m => ({
+    seq: m.seq,
+    from: m.from,
+    content: m.content.length > 180 ? `${m.content.slice(0, 180)}...` : m.content,
+  }));
+  const highlights = messages
+    .filter(m => /P1|P2|P3|error|失败|通过|修复|todo|下一步/i.test(m.content))
+    .slice(-5)
+    .map(m => `[${m.from}] ${m.content.slice(0, 120)}`);
+  return {
+    cursor: snapshot.cursor || 0,
+    consecutiveAgentTurns: snapshot.consecutiveAgentTurns || 0,
+    totalMessages: snapshot.totalMessages || messages.length,
+    highlights,
+    recent,
+    // Backward-compat for callers expecting `messages`
+    messages: recent,
+  };
+}
+
 function httpRequest(method, urlStr, body) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -84,10 +115,13 @@ server.tool(
 server.tool(
   'arena_get_context',
   'Get recent messages from the Arena chatroom',
-  {},
-  async () => {
+  {
+    detail: z.boolean().optional().describe('If true, return full snapshot. Default false returns concise summary.'),
+  },
+  async ({ detail = false }) => {
     const result = await httpRequest('GET', `${API_URL}/api/agent-snapshot`);
-    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    const payload = detail ? result : summarizeSnapshot(result);
+    return { content: [{ type: 'text', text: JSON.stringify(payload) }] };
   }
 );
 

@@ -100,7 +100,17 @@ function handleGetAgentStatus(req, res) {
 // Issue a WS session token for authenticated clients
 function handleGetWsToken(req, res) {
   const url = new URL(req.url, `http://localhost:${PORT}`);
-  const identity = url.searchParams.get('identity') || 'human';
+  const requestedIdentity = url.searchParams.get('identity') || 'human';
+  let identity = 'human';
+  if (requestedIdentity === 'agent') {
+    const authResult = auth.authenticate(req, {});
+    if (!authResult.ok) {
+      const code = authResult.error === 'token_expired' ? 403 : 401;
+      jsonResponse(res, code, { error: authResult.error });
+      return;
+    }
+    identity = 'agent';
+  }
   const token = auth.issueWsSession(identity);
   jsonResponse(res, 200, { token });
 }
