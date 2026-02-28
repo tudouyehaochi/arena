@@ -10,6 +10,7 @@ const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
 const DEFAULT_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
 const DEFAULT_PORT = resolvePort({ port: process.env.PORT, environment: DEFAULT_ENV, branch: currentBranch() });
+const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${DEFAULT_ENV}:${currentBranch()}:${DEFAULT_PORT}`;
 const API_URL = process.env.ARENA_API_URL || `http://localhost:${DEFAULT_PORT}`;
 const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
 const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
@@ -47,7 +48,15 @@ function httpGet(urlStr) {
 function runCommand(cmd, args, label) {
   return new Promise((resolve, reject) => {
     console.log(`\n=== ${label} ===\n`);
-    const env = { ...process.env, ARENA_API_URL: API_URL, ARENA_INVOCATION_ID: INVOCATION_ID, ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN };
+    const env = {
+      ...process.env,
+      ARENA_API_URL: API_URL,
+      ARENA_INVOCATION_ID: INVOCATION_ID,
+      ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN,
+      ARENA_ENVIRONMENT: DEFAULT_ENV,
+      ARENA_INSTANCE_ID: INSTANCE_ID,
+      ARENA_TARGET_PORT: String(DEFAULT_PORT),
+    };
     delete env.CLAUDECODE;
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
     child.stdout.on('data', (d) => process.stdout.write(`[${label}] ${d}`));
@@ -77,7 +86,16 @@ function pickAgent(recentMessages) {
   return '清风';
 }
 let sessionSummary = memory.loadSummary();
-const agentRuntime = createAgentRuntime({ API_URL, INVOCATION_ID, CALLBACK_TOKEN, runCommand, MCP_SCRIPT });
+const agentRuntime = createAgentRuntime({
+  API_URL,
+  INVOCATION_ID,
+  CALLBACK_TOKEN,
+  RUNTIME_ENV: DEFAULT_ENV,
+  INSTANCE_ID,
+  TARGET_PORT: DEFAULT_PORT,
+  runCommand,
+  MCP_SCRIPT,
+});
 async function invokeAgent(agent, recentMessages) {
   const prompt = buildPrompt(agent, recentMessages, { sessionSummary });
   logInvokeMetrics(agent, prompt, recentMessages, recentMessages.length <= 2);

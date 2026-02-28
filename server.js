@@ -11,6 +11,7 @@ const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } =
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
 const PORT = resolvePort({ port: process.env.PORT, environment: RUNTIME_ENV, branch: BRANCH });
+const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${RUNTIME_ENV}:${BRANCH}:${PORT}`;
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
 
 // Load message history on startup
@@ -54,7 +55,11 @@ const server = http.createServer((req, res) => {
   if (routes[key]) {
     routes[key](req, res);
   } else if (method === 'POST' && urlPath === '/api/callbacks/post-message') {
-    handlePostMessage(req, res, broadcast);
+    handlePostMessage(req, res, broadcast, {
+      instanceId: INSTANCE_ID,
+      runtimeEnv: RUNTIME_ENV,
+      targetPort: PORT,
+    });
   } else if (method === 'GET' && urlPath === '/api/agent-snapshot') {
     // Auth check first, then decide full vs summary
     handleGetSnapshot(req, res, PORT);
@@ -118,6 +123,7 @@ function start() {
     }
     console.log(`Arena chatroom running at http://localhost:${PORT}`);
     console.log(`Environment: ${RUNTIME_ENV} | Branch: ${BRANCH}`);
+    console.log(`Instance: ${INSTANCE_ID}`);
     console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
     console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
     console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);

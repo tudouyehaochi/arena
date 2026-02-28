@@ -22,6 +22,7 @@ const branch = currentBranch();
 const runtimeEnv = inferEnvironment(cli.env);
 const runtimePort = resolvePort({ port: cli.port, environment: runtimeEnv, branch });
 const runtimeApiUrl = resolveApiUrl({ apiUrl: cli.apiUrl, port: runtimePort });
+const runtimeInstanceId = `${runtimeEnv}:${branch}:${runtimePort}`;
 const LOCK_FILE = path.join(os.tmpdir(), `arena-resident-${runtimePort}.lock`);
 
 function isPidRunning(pid) {
@@ -73,12 +74,13 @@ function parseArgs(args) {
 
 function spawnServer() {
   log(`starting server: ${SERVER_CMD} ${SERVER_ARGS.join(' ')}`);
-  log(`runtime env=${runtimeEnv} branch=${branch} port=${runtimePort} api=${runtimeApiUrl}`);
+  log(`runtime env=${runtimeEnv} branch=${branch} port=${runtimePort} api=${runtimeApiUrl} instance=${runtimeInstanceId}`);
   serverProc = spawn(SERVER_CMD, SERVER_ARGS, {
     env: {
       ...process.env,
       PORT: String(runtimePort),
       ARENA_ENVIRONMENT: runtimeEnv,
+      ARENA_INSTANCE_ID: runtimeInstanceId,
       ARENA_CREDENTIALS_FILE: CRED_FILE,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -119,6 +121,7 @@ function spawnRunner() {
     ...process.env,
     ARENA_API_URL: runtimeApiUrl,
     ARENA_ENVIRONMENT: runtimeEnv,
+    ARENA_INSTANCE_ID: runtimeInstanceId,
     ARENA_INVOCATION_ID: invocationId,
     ARENA_CALLBACK_TOKEN: callbackToken,
   };

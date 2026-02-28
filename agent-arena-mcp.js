@@ -3,6 +3,7 @@ const { StdioServerTransport } = require('@modelcontextprotocol/sdk/server/stdio
 const { z } = require('zod');
 const http = require('http');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 const { registerFileTools } = require('./lib/mcp-file-tools');
 const { registerGitTools } = require('./lib/mcp-git-tools');
@@ -12,6 +13,9 @@ const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
 const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
 const PROJECT_ROOT = process.env.ARENA_PROJECT_ROOT || path.join(__dirname);
 const REQUEST_TIMEOUT_MS = 10000;
+const RUNTIME_ENV = process.env.ARENA_ENVIRONMENT || 'dev';
+const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || '';
+const TARGET_PORT = Number.parseInt(new URL(API_URL).port || '80', 10);
 
 if (!INVOCATION_ID || !CALLBACK_TOKEN) {
   console.error('FATAL: Missing ARENA_INVOCATION_ID or ARENA_CALLBACK_TOKEN');
@@ -62,7 +66,14 @@ server.tool(
   'Post a message to the Arena chatroom',
   { content: z.string().describe('The message content to post'), from: z.string().describe('The sender name (e.g. "清风" or "明月")') },
   async ({ content, from }) => {
-    const result = await httpRequest('POST', `${API_URL}/api/callbacks/post-message`, { content, from });
+    const result = await httpRequest('POST', `${API_URL}/api/callbacks/post-message`, {
+      content,
+      from,
+      runtimeEnv: RUNTIME_ENV,
+      instanceId: INSTANCE_ID,
+      targetPort: TARGET_PORT,
+      idempotencyKey: crypto.randomUUID(),
+    });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );

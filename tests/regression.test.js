@@ -2,9 +2,10 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
+const { Readable } = require('node:stream');
 
 const auth = require('../lib/auth');
-const { handleGetWsToken, handleGetSnapshot } = require('../lib/route-handlers');
+const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
@@ -22,6 +23,17 @@ function makeRes() {
       this.body = payload || '';
     },
   };
+}
+
+function invokePost(payload, authHeader, runtime) {
+  return new Promise((resolve) => {
+    const req = Readable.from([JSON.stringify(payload)]);
+    req.headers = authHeader ? { authorization: authHeader } : {};
+    const res = makeRes();
+    handlePostMessage(req, res, () => {}, runtime);
+    const end = res.end.bind(res);
+    res.end = (data) => { end(data); resolve(res); };
+  });
 }
 
 describe('route-handlers auth regression', () => {
@@ -80,6 +92,47 @@ describe('route-handlers auth regression', () => {
     const data = JSON.parse(res.body);
     assert.ok(typeof data.cursor === 'number');
     assert.ok(Array.isArray(data.messages));
+  });
+
+  it('POST /api/callbacks/post-message rejects env mismatch', async () => {
+    const creds = auth.getCredentials();
+    const authHeader = `Bearer ${creds.invocationId}:${creds.callbackToken}`;
+    const runtime = { instanceId: 'dev:dev:3000', runtimeEnv: 'dev', targetPort: 3000 };
+    const res = await invokePost({
+      content: 'test',
+      from: '明月',
+      instanceId: 'prod:master:3001',
+      runtimeEnv: 'prod',
+      targetPort: 3001,
+      idempotencyKey: 'idem-mismatch-1',
+    }, authHeader, runtime);
+    assert.equal(res.status, 409);
+    assert.equal(JSON.parse(res.body).error, 'env_mismatch');
+  });
+
+  it('POST /api/callbacks/post-message deduplicates by idempotency key', async () => {
+    const creds = auth.getCredentials();
+    const authHeader = `Bearer ${creds.invocationId}:${creds.callbackToken}`;
+    const runtime = { instanceId: 'dev:dev:3000', runtimeEnv: 'dev', targetPort: 3000 };
+    const totalBefore = store.getSnapshot(0).totalMessages;
+    const payload = {
+      content: 'idempotent-msg',
+      from: '明月',
+      instanceId: 'dev:dev:3000',
+      runtimeEnv: 'dev',
+      targetPort: 3000,
+      idempotencyKey: 'idem-same-1',
+    };
+    const r1 = await invokePost(payload, authHeader, runtime);
+    const r2 = await invokePost(payload, authHeader, runtime);
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 200);
+    const b1 = JSON.parse(r1.body);
+    const b2 = JSON.parse(r2.body);
+    assert.equal(b1.seq, b2.seq);
+    assert.equal(b2.deduped, true);
+    const totalAfter = store.getSnapshot(0).totalMessages;
+    assert.equal(totalAfter, totalBefore + 1);
   });
 });
 
