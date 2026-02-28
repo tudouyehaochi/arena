@@ -33,10 +33,6 @@ function handleGetAgentStatus(req, res) {
   jsonResponse(res, 200, store.getSnapshot(0));
 }
 
-function handleSummarizedSnapshot(req, res) {
-  jsonResponse(res, 200, store.getSummarizedSnapshot(0));
-}
-
 // --- Route dispatch ---
 
 const routes = {
@@ -57,12 +53,8 @@ const server = http.createServer((req, res) => {
   } else if (method === 'POST' && urlPath === '/api/callbacks/post-message') {
     handlePostMessage(req, res, broadcast);
   } else if (method === 'GET' && urlPath === '/api/agent-snapshot') {
-    const url = new URL(req.url, `http://localhost:${PORT}`);
-    if (url.searchParams.get('summary') === '1') {
-      handleSummarizedSnapshot(req, res);
-    } else {
-      handleGetSnapshot(req, res, PORT);
-    }
+    // Auth check first, then decide full vs summary
+    handleGetSnapshot(req, res, PORT);
   } else if (method === 'GET' && urlPath === '/api/callbacks/thread-context') {
     handleGetSnapshot(req, res, PORT);
   } else {

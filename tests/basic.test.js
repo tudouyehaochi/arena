@@ -65,8 +65,9 @@ describe('auth', () => {
 // message-store.js tests
 // ---------------------------------------------------------------------------
 describe('message-store', () => {
-  // Note: message-store is a singleton. Tests add to global state.
   const store = require('../lib/message-store');
+  // Disable log file writes during tests to avoid polluting chatroom.log
+  store._setLogFile(null);
 
   it('addMessage assigns seq and timestamp', () => {
     const msg = store.addMessage({ type: 'chat', from: 'testUser', content: 'hello' });

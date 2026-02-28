@@ -84,19 +84,30 @@ registerGitTools(server, PROJECT_ROOT, safePath);
 
 // --- Test tool with whitelist ---
 
-const ALLOWED_TEST_PREFIXES = ['npm test', 'npm run', 'node ', 'npx '];
+const ALLOWED_TEST_PREFIXES = ['npm test', 'npm run '];
+const ALLOWED_NODE_PATTERNS = [
+  /^node\s+--test\s/,               // node --test tests/...
+  /^node\s+tests?\//,               // node tests/... or node test/...
+  /^npx\s+(jest|vitest|mocha|c8)\b/, // common test runners via npx
+];
 const BLOCKED_COMMANDS = [/rm\s+-rf/, /mkfs/, /dd\s+if=/, />\s*\/dev/];
+
+function isAllowedTestCommand(command) {
+  if (ALLOWED_TEST_PREFIXES.some(p => command.startsWith(p))) return true;
+  if (command === 'npm test') return true;
+  if (ALLOWED_NODE_PATTERNS.some(p => p.test(command))) return true;
+  return false;
+}
 
 server.tool(
   'arena_run_test',
-  'Run a test command in the project directory. Only npm/node/npx commands are allowed.',
+  'Run a test command. Allowed: "npm test", "npm run <script>", "node --test tests/...", "npx jest/vitest/mocha".',
   { command: z.string().describe('The test command to run, e.g. "npm test" or "node --test tests/"') },
   async ({ command }) => {
     try {
-      const allowed = ALLOWED_TEST_PREFIXES.some(p => command.startsWith(p));
-      if (!allowed) {
+      if (!isAllowedTestCommand(command)) {
         return {
-          content: [{ type: 'text', text: `Blocked: command must start with one of: ${ALLOWED_TEST_PREFIXES.map(p => `"${p.trim()}"`).join(', ')}` }],
+          content: [{ type: 'text', text: 'Blocked: only npm test, npm run, node --test tests/, npx <test-runner> are allowed.' }],
           isError: true,
         };
       }

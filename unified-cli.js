@@ -170,3 +170,8 @@ function invoke(cli, prompt, options = {}) {
 }
 
 module.exports = { invoke };
+
+// Allow direct execution for backward compat: node unified-cli.js <cli> "prompt"
+if (require.main === module) {
+  require('./cli-entry');
+}
