@@ -79,7 +79,7 @@
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     let wsUrl = proto + '//' + location.host;
     try {
-      const t = await fetch('/api/ws-token?identity=human').then(r => r.json());
+      const t = await fetch('/api/ws-token').then(r => r.json());
       if (t && t.token) wsUrl += '?token=' + encodeURIComponent(t.token);
     } catch {}
     ws = new WebSocket(wsUrl);
