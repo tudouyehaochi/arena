@@ -61,10 +61,34 @@ function runCommand(cmd, args, label) {
     };
     delete env.CLAUDECODE;
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
-    child.stdout.on('data', (d) => process.stdout.write(`[${label}] ${d}`));
-    child.stderr.on('data', (d) => process.stderr.write(`[${label} err] ${d}`));
+    const isCodex = cmd === 'codex';
+    attachFilteredOutput(child.stdout, `[${label}] `, process.stdout.write.bind(process.stdout), (line) => shouldDropCodexNoise(line, isCodex));
+    attachFilteredOutput(child.stderr, `[${label} err] `, process.stderr.write.bind(process.stderr), (line) => shouldDropCodexNoise(line, isCodex));
     child.on('close', (code) => code !== 0 ? reject(new Error(`${label} exited ${code}`)) : resolve());
     child.on('error', reject);
+  });
+}
+function shouldDropCodexNoise(line, isCodex) {
+  if (!isCodex) return false;
+  return (
+    line.includes('responses_websocket: failed to connect to websocket') ||
+    line.includes('failed to record rollout items') ||
+    line.includes('"type":"error","message":"Reconnecting...') ||
+    line.includes('Falling back from WebSockets to HTTPS transport')
+  );
+}
+function attachFilteredOutput(stream, prefix, writeFn, shouldDrop) {
+  let buf = '';
+  stream.on('data', (d) => {
+    buf += d.toString();
+    const parts = buf.split('\n');
+    buf = parts.pop();
+    for (const line of parts) {
+      if (!shouldDrop(line)) writeFn(`${prefix}${line}\n`);
+    }
+  });
+  stream.on('end', () => {
+    if (buf && !shouldDrop(buf)) writeFn(`${prefix}${buf}`);
   });
 }
 
