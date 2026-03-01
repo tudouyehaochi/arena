@@ -3,6 +3,7 @@ set -euo pipefail
 
 ENV_NAME="dev"
 KIND="hourly"
+RDB_TIMEOUT_SEC="${RDB_TIMEOUT_SEC:-120}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,7 +38,20 @@ TMP_DIR="$(mktemp -d)"
 OUT_TAR="${BASE_DIR}/${NAME}.tar.gz"
 
 redis-cli -u "$REDIS_URL" ping >/dev/null
-redis-cli -u "$REDIS_URL" --rdb "${TMP_DIR}/dump.rdb" >/dev/null
+redis-cli -u "$REDIS_URL" --rdb "${TMP_DIR}/dump.rdb" >/dev/null &
+RDB_PID=$!
+START_TS=$(date +%s)
+while kill -0 "$RDB_PID" 2>/dev/null; do
+  NOW_TS=$(date +%s)
+  if (( NOW_TS - START_TS > RDB_TIMEOUT_SEC )); then
+    kill -9 "$RDB_PID" 2>/dev/null || true
+    echo "redis --rdb timeout after ${RDB_TIMEOUT_SEC}s" >&2
+    rm -rf "$TMP_DIR"
+    exit 1
+  fi
+  sleep 1
+done
+wait "$RDB_PID"
 redis-cli -u "$REDIS_URL" info server > "${TMP_DIR}/info-server.txt"
 redis-cli -u "$REDIS_URL" info memory > "${TMP_DIR}/info-memory.txt"
 redis-cli -u "$REDIS_URL" info persistence > "${TMP_DIR}/info-persistence.txt"
