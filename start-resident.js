@@ -11,9 +11,14 @@ const SERVER_ARGS = process.env.ARENA_SERVER_ARGS ? process.env.ARENA_SERVER_ARG
 const RUNNER_CMD = process.env.ARENA_RUNNER_CMD || 'node';
 const RUNNER_ARGS = process.env.ARENA_RUNNER_ARGS ? process.env.ARENA_RUNNER_ARGS.split(' ') : ['run-room-runners.js'];
 
+let redisProc = null;
 let serverProc = null;
 let runnerProc = null;
 let shuttingDown = false;
+let redisRestarts = 0;
+const REDIS_MAX_RESTARTS = 5;
+const REDIS_RESTART_WINDOW_MS = 60000;
+let redisFirstFailAt = 0;
 let invocationId = '';
 let callbackToken = '';
 const CRED_FILE = path.join(os.tmpdir(), `arena-creds-${process.pid}.json`);
@@ -24,6 +29,7 @@ const runtimePort = resolvePort({ port: cli.port, environment: runtimeEnv, branc
 const runtimeApiUrl = resolveApiUrl({ apiUrl: cli.apiUrl, port: runtimePort });
 const runtimeInstanceId = `${runtimeEnv}:${branch}:${runtimePort}`;
 const runtimeRoomId = cli.roomId || process.env.ARENA_ROOM_ID || 'default';
+const redisPort = runtimeEnv === 'prod' ? 6380 : 6379;
 const LOCK_FILE = path.join(os.tmpdir(), `arena-resident-${runtimePort}.lock`);
 
 function isPidRunning(pid) {
@@ -72,6 +78,69 @@ function parseArgs(args) {
     else if (a === '--room-id' && args[i + 1]) out.roomId = args[++i];
   }
   return out;
+}
+
+function spawnRedis() {
+  const confFile = path.join(__dirname, 'redis', `redis-${runtimeEnv}.conf`);
+  if (!fs.existsSync(confFile)) {
+    log(`redis config not found: ${confFile}, skipping managed redis`);
+    return;
+  }
+  log(`starting redis-server (${runtimeEnv}, port ${redisPort})`);
+  redisProc = spawn('redis-server', [confFile], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  redisProc.stdout.on('data', (d) => process.stdout.write(`[redis] ${d}`));
+  redisProc.stderr.on('data', (d) => process.stderr.write(`[redis err] ${d}`));
+  redisProc.on('exit', (code) => {
+    log(`redis exited with code ${code}`);
+    redisProc = null;
+    if (shuttingDown) return;
+    const now = Date.now();
+    if (now - redisFirstFailAt > REDIS_RESTART_WINDOW_MS) {
+      redisRestarts = 0;
+      redisFirstFailAt = now;
+    }
+    redisRestarts++;
+    if (redisRestarts > REDIS_MAX_RESTARTS) {
+      log(`redis crashed ${redisRestarts} times in ${REDIS_RESTART_WINDOW_MS / 1000}s, giving up`);
+      shutdown();
+      return;
+    }
+    const delay = Math.min(redisRestarts * 1000, 5000);
+    log(`redis restart ${redisRestarts}/${REDIS_MAX_RESTARTS}, retrying in ${delay}ms...`);
+    setTimeout(async () => {
+      if (shuttingDown) return;
+      spawnRedis();
+      try {
+        await waitForRedis(redisPort);
+        log(`redis recovered on port ${redisPort}`);
+      } catch (e) {
+        log(`redis restart failed: ${e.message}`);
+        shutdown();
+      }
+    }, delay);
+  });
+}
+
+function waitForRedis(port, timeoutMs = 5000) {
+  const net = require('net');
+  const start = Date.now();
+  return new Promise((resolve, reject) => {
+    function tryConnect() {
+      const sock = net.createConnection(port, '127.0.0.1');
+      sock.on('connect', () => { sock.destroy(); resolve(); });
+      sock.on('error', () => {
+        sock.destroy();
+        if (Date.now() - start > timeoutMs) {
+          reject(new Error(`redis not ready on port ${port} after ${timeoutMs}ms`));
+        } else {
+          setTimeout(tryConnect, 100);
+        }
+      });
+    }
+    tryConnect();
+  });
 }
 
 function spawnServer() {
@@ -147,9 +216,11 @@ function shutdown() {
   log('shutting down resident stack...');
   if (runnerProc) runnerProc.kill('SIGTERM');
   if (serverProc) serverProc.kill('SIGTERM');
+  if (redisProc) redisProc.kill('SIGTERM');
   setTimeout(() => {
     if (runnerProc && !runnerProc.killed) runnerProc.kill('SIGKILL');
     if (serverProc && !serverProc.killed) serverProc.kill('SIGKILL');
+    if (redisProc && !redisProc.killed) redisProc.kill('SIGKILL');
     try { fs.unlinkSync(CRED_FILE); } catch {}
     try { fs.unlinkSync(LOCK_FILE); } catch {}
     process.exit(0);
@@ -166,4 +237,17 @@ try {
   log(`failed to start: ${e.message}`);
   process.exit(1);
 }
-spawnServer();
+
+(async () => {
+  spawnRedis();
+  if (redisProc) {
+    try {
+      await waitForRedis(redisPort);
+      log(`redis ready on port ${redisPort}`);
+    } catch (e) {
+      log(`${e.message}`);
+      process.exit(1);
+    }
+  }
+  spawnServer();
+})();

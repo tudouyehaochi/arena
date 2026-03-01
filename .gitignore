@@ -2,4 +2,10 @@ node_modules/
 chatroom.log
 agent-metrics.log
 session-summary.json
+session-summary.*.json
 runner-state.json
+runner-state.*.json
+redis/*.rdb
+redis/*.aof
+redis/appendonlydir-*/
+redis/*.log
