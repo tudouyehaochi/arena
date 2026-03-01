@@ -66,6 +66,7 @@ describe('room management', () => {
     const log = tempLogFile('rooms-delete');
     store._setLogFile(log);
     const roomId = `room_del_${Date.now()}`;
+    await store.ensureRoom(roomId, { title: roomId, createdBy: 'tester' });
     await store.addMessage({ type: 'chat', from: 'tester', content: 'old message' }, roomId);
     assert.ok(fs.readFileSync(log, 'utf8').includes(`\"roomId\":\"${roomId}\"`));
     await store.deleteRoom(roomId);

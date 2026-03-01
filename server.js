@@ -113,11 +113,16 @@ wss.on('connection', async (ws, req) => {
   }
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const sessionToken = url.searchParams.get('token');
-  const session = sessionToken ? auth.validateWsSession(sessionToken, roomId) : { ok: false };
+  const session = sessionToken ? await auth.validateWsSession(sessionToken, roomId) : { ok: false };
   ws.identity = session.ok ? session.identity : 'anonymous';
   ws.roomId = roomId;
 
-  await store.loadFromLog(roomId);
+  try {
+    await store.loadFromLog(roomId);
+  } catch {
+    ws.close(1011, 'store_unavailable');
+    return;
+  }
   ws.send(JSON.stringify({ type: 'history', roomId, messages: store.getMessages(roomId) }));
 
   ws.on('message', async (raw) => {
@@ -136,6 +141,7 @@ wss.on('connection', async (ws, req) => {
 let heartbeatTimer = null;
 
 async function start() {
+  await redis.waitUntilReady(5000);
   await store.ensureRoom(DEFAULT_ROOM, { title: DEFAULT_ROOM, createdBy: 'system', boundInstanceId: INSTANCE_ID });
   await store.loadFromLog(DEFAULT_ROOM);
   await runtimeRegistry.registerInstance({

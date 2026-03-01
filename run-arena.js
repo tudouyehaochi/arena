@@ -96,16 +96,15 @@ function logInvokeMetrics(agent, prompt, recentMessages, summaryOnly) {
   const row = { ts: new Date().toISOString(), roomId: ROOM_ID, agent, promptChars: prompt.length, recentCount: recentMessages.length, summaryOnly };
   fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
 }
-function readStateFile() { try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return {}; } }
 async function loadRunnerState() {
-  return redis.withFallback(async () => {
-    const v = await redis.getClient().get(`room:${ROOM_ID}:runner:lastHandledHumanSeq`);
-    return v ? { lastHandledHumanSeq: parseInt(v, 10) } : readStateFile();
-  }, readStateFile);
+  if (!redis.isReady()) throw new Error('redis_unavailable');
+  const v = await redis.getClient().get(`room:${ROOM_ID}:runner:lastHandledHumanSeq`);
+  return v ? { lastHandledHumanSeq: parseInt(v, 10) } : {};
 }
 async function saveRunnerState(state) {
   try { fs.writeFileSync(STATE_PATH, JSON.stringify(state) + '\n', 'utf8'); } catch {}
-  await redis.withFallback(() => redis.getClient().set(`room:${ROOM_ID}:runner:lastHandledHumanSeq`, String(state.lastHandledHumanSeq || 0)), () => {});
+  if (!redis.isReady()) throw new Error('redis_unavailable');
+  await redis.getClient().set(`room:${ROOM_ID}:runner:lastHandledHumanSeq`, String(state.lastHandledHumanSeq || 0));
 }
 
 function pickAgent(recentMessages) {
@@ -161,6 +160,7 @@ async function main() {
   console.log('=== Arena Agent Runner ===');
   console.log(`API: ${API_URL} | Room: ${ROOM_ID} | Poll: ${POLL_INTERVAL}ms`);
   redis.startConnect();
+  await redis.waitUntilReady(5000);
   sessionSummary = await memory.loadSummary(SUMMARY_PATH, `room:${ROOM_ID}:session:summary`);
   lastHandledHumanSeq = (await loadRunnerState()).lastHandledHumanSeq || null;
   await Promise.all([agentRuntime.清风.setup().catch(() => {}), agentRuntime.明月.setup().catch(() => {})]);

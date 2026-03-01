@@ -30,6 +30,8 @@ function invokePost(payload, authHeader, runtime) {
 describe('room isolation', () => {
   it('store keeps room messages separated', async () => {
     store._setLogFile(null);
+    await store.ensureRoom('roomA', { title: 'roomA', createdBy: 'test' });
+    await store.ensureRoom('roomB', { title: 'roomB', createdBy: 'test' });
     await store.addMessage({ type: 'chat', from: 'u1', content: 'a1' }, 'roomA');
     await store.addMessage({ type: 'chat', from: 'u2', content: 'b1' }, 'roomB');
     const a = store.getSnapshot('roomA', 0);
@@ -40,10 +42,10 @@ describe('room isolation', () => {
     assert.ok(!b.messages.some((m) => m.content === 'a1'));
   });
 
-  it('ws token is room-scoped', () => {
-    const token = auth.issueWsSession('human', 'roomA');
-    assert.equal(auth.validateWsSession(token, 'roomA').ok, true);
-    assert.equal(auth.validateWsSession(token, 'roomB').ok, false);
+  it('ws token is room-scoped', async () => {
+    const token = await auth.issueWsSession('human', 'roomA');
+    assert.equal((await auth.validateWsSession(token, 'roomA')).ok, true);
+    assert.equal((await auth.validateWsSession(token, 'roomB')).ok, false);
   });
 
   it('callback post requires roomId', async () => {

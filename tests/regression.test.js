@@ -66,7 +66,7 @@ describe('route-handlers auth regression', () => {
     await handleGetWsToken(req, res);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
-    const session = auth.validateWsSession(data.token, 'default');
+    const session = await auth.validateWsSession(data.token, 'default');
     assert.equal(session.ok, true);
     assert.equal(session.identity, 'human');
   });
@@ -81,7 +81,7 @@ describe('route-handlers auth regression', () => {
     await handleGetWsToken(req, res);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
-    const session = auth.validateWsSession(data.token, 'default');
+    const session = await auth.validateWsSession(data.token, 'default');
     assert.equal(session.ok, true);
     assert.equal(session.identity, 'agent');
   });

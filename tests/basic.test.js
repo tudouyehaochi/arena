@@ -48,15 +48,15 @@ describe('auth', () => {
     assert.equal(r2.error, 'jti_reused');
   });
 
-  it('issueWsSession and validateWsSession round-trip', () => {
-    const token = auth.issueWsSession('human');
-    const result = auth.validateWsSession(token);
+  it('issueWsSession and validateWsSession round-trip', async () => {
+    const token = await auth.issueWsSession('human');
+    const result = await auth.validateWsSession(token);
     assert.equal(result.ok, true);
     assert.equal(result.identity, 'human');
   });
 
-  it('validateWsSession rejects unknown token', () => {
-    const result = auth.validateWsSession('nonexistent');
+  it('validateWsSession rejects unknown token', async () => {
+    const result = await auth.validateWsSession('nonexistent');
     assert.equal(result.ok, false);
   });
 });

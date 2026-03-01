@@ -5,13 +5,12 @@ const assert = require('node:assert/strict');
 const redisClient = require('../lib/redis-client');
 
 describe('withFallback degradation', () => {
-  it('runs fallback when Redis is not ready', async () => {
-    // Redis is not connected in test, so isReady() = false
+  it('uses redis branch when Redis is ready', async () => {
     const result = await redisClient.withFallback(
       async () => 'redis-value',
       () => 'fallback-value',
     );
-    assert.equal(result, 'fallback-value');
+    assert.equal(result, 'redis-value');
   });
 
   it('runs fallback when redisFn throws', async () => {
@@ -25,12 +24,12 @@ describe('withFallback degradation', () => {
     assert.equal(result, 'safe-fallback');
   });
 
-  it('isReady returns false when no connection', () => {
-    assert.equal(redisClient.isReady(), false);
+  it('isReady returns true in memory redis mode', () => {
+    assert.equal(redisClient.isReady(), true);
   });
 });
 
-describe('message-store addMessage (no Redis)', () => {
+describe('message-store addMessage (memory Redis)', () => {
   const store = require('../lib/message-store');
 
   beforeEach(() => {
@@ -59,35 +58,37 @@ describe('message-store addMessage (no Redis)', () => {
   });
 });
 
-describe('redis-context (no Redis fallback)', () => {
+describe('redis-context (memory Redis)', () => {
   const ctx = require('../lib/redis-context');
 
-  it('setAgentContext does not throw without Redis', async () => {
+  it('setAgentContext stores data in Redis', async () => {
     await ctx.setAgentContext('default', '清风', { currentGoal: 'test', status: 'idle' });
-    // No error = success (graceful fallback)
+    const got = await ctx.getAgentContext('default', '清风');
+    assert.equal(got.currentGoal, 'test');
   });
 
-  it('getAgentContext returns null without Redis', async () => {
+  it('getAgentContext returns stored value', async () => {
     const result = await ctx.getAgentContext('default', '清风');
-    assert.equal(result, null);
+    assert.ok(result && typeof result === 'object');
   });
 
-  it('getAllAgentContext returns null entries without Redis', async () => {
+  it('getAllAgentContext returns object entries', async () => {
     const result = await ctx.getAllAgentContext('default');
-    assert.equal(result['清风'], null);
-    assert.equal(result['明月'], null);
+    assert.ok(Object.prototype.hasOwnProperty.call(result, '清风'));
+    assert.ok(Object.prototype.hasOwnProperty.call(result, '明月'));
   });
 
-  it('getSharedGoals returns empty array without Redis', async () => {
+  it('getSharedGoals returns pushed goals', async () => {
+    await ctx.pushSharedGoal('default', 'goal1');
     const goals = await ctx.getSharedGoals('default');
-    assert.deepEqual(goals, []);
+    assert.ok(goals.includes('goal1'));
   });
 });
 
-describe('session-memory async (no Redis)', () => {
+describe('session-memory async (memory Redis)', () => {
   const memory = require('../lib/session-memory');
 
-  it('loadSummary works without Redis', async () => {
+  it('loadSummary works with Redis', async () => {
     const result = await memory.loadSummary();
     // Returns null or a valid summary object
     assert.ok(result === null || typeof result === 'object');
