@@ -113,6 +113,13 @@ function spawnRunner(roomId) {
   });
 }
 
+function stopRunner(roomId) {
+  const p = RUNNERS.get(roomId);
+  if (!p) return;
+  RUNNERS.delete(roomId);
+  p.kill('SIGTERM');
+}
+
 async function syncRooms() {
   const data = await requestJson('GET', '/api/rooms', null, 12000);
   const rooms = Array.isArray(data.rooms) ? data.rooms : [];
@@ -121,6 +128,12 @@ async function syncRooms() {
     if (r && typeof r.roomId === 'string' && r.roomId) roomIds.add(r.roomId);
   }
   for (const roomId of roomIds) spawnRunner(roomId);
+  for (const roomId of [...RUNNERS.keys()]) {
+    if (!roomIds.has(roomId) && roomId !== 'default' && roomId !== BOOTSTRAP_ROOM) {
+      stopRunner(roomId);
+      console.log(`[room-runners] stopped deleted room=${roomId}`);
+    }
+  }
 }
 
 async function shutdown() {
