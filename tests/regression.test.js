@@ -7,7 +7,7 @@ const { Readable } = require('node:stream');
 const auth = require('../lib/auth');
 const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
-const { handleGetAdminStatus } = require('../lib/admin-handlers');
+const { handleGetAdminStatus, handlePostAdminLogin } = require('../lib/admin-handlers');
 const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
@@ -193,6 +193,17 @@ describe('route-handlers auth regression', () => {
     await handleGetAdminStatus(req, res);
     assert.equal(res.status, 401);
     process.env.ARENA_ADMIN_KEY = prev;
+  });
+
+  it('POST /api/admin/login accepts default credentials', async () => {
+    const req = Readable.from([JSON.stringify({ username: 'admin', password: 'arena_123' })]);
+    req.headers = {};
+    const res = makeRes();
+    await handlePostAdminLogin(req, res);
+    assert.equal(res.status, 200);
+    const data = JSON.parse(res.body);
+    assert.equal(data.status, 'ok');
+    assert.ok(typeof data.token === 'string' && data.token.length > 10);
   });
 });
 

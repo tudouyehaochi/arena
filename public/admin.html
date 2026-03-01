@@ -9,14 +9,26 @@
 .wrap{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
 .h{display:flex;align-items:center;gap:8px}.sp{margin-left:auto}.btn{border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
+.input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:220px}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}.kv{border:1px solid var(--line);border-radius:8px;padding:8px}.k{font-size:12px;color:var(--muted)}.v{font-weight:700}
 .tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;font-size:13px}
-.bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--ok)}
+.bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--ok)}.hide{display:none}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="card h"><strong>Arena Admin</strong><span id="stamp" class="sp"></span><button id="refresh" class="btn">刷新</button><button id="check" class="btn">运行完整性校验</button></div>
+<div class="wrap" id="login-panel">
+  <div class="card">
+    <div class="h"><strong>Admin Login</strong></div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <input id="username" class="input" placeholder="username" value="admin">
+      <input id="password" class="input" placeholder="password" type="password" value="arena_123">
+      <button id="login" class="btn">登录</button>
+    </div>
+    <div id="login-msg" class="warn" style="margin-top:8px"></div>
+  </div>
+</div>
+<div class="wrap hide" id="admin-panel">
+  <div class="card h"><strong>Arena Admin</strong><span id="stamp" class="sp"></span><button id="refresh" class="btn">刷新</button><button id="check" class="btn">运行完整性校验</button><button id="logout" class="btn">退出</button></div>
   <div class="card"><div class="h"><strong>运行状态</strong></div><div id="runtime" class="grid"></div></div>
   <div class="card"><div class="h"><strong>完整性与房间</strong></div><div id="integrity"></div></div>
   <div class="card"><div class="h"><strong>告警</strong></div><table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table></div>
@@ -25,34 +37,48 @@
 <script>
 (()=>{
   const $=(id)=>document.getElementById(id);
-  const adminKey=new URLSearchParams(location.search).get('adminKey')||'';
-  const authHeaders=adminKey?{'x-admin-key':adminKey}:{};
-  function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
-  function fmtBytes(n){const v=Number(n||0);if(v<1024)return v+' B';if(v<1024*1024)return (v/1024).toFixed(1)+' KB';if(v<1024*1024*1024)return (v/1024/1024).toFixed(1)+' MB';return (v/1024/1024/1024).toFixed(2)+' GB';}
-  function levelClass(l){if(l==='CRITICAL')return'bad';if(l==='WARN')return'warn';return'ok';}
+  const keyFromUrl=new URLSearchParams(location.search).get('adminKey')||'';
+  let adminToken=localStorage.getItem('arena_admin_token')||'';
+  const authHeaders=()=>{const h={};if(keyFromUrl)h['x-admin-key']=keyFromUrl;if(adminToken)h['x-admin-token']=adminToken;return h;};
+  const esc=(s)=>{const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;};
+  const fmtBytes=(n)=>{const v=Number(n||0);if(v<1024)return v+' B';if(v<1024*1024)return(v/1024).toFixed(1)+' KB';if(v<1024*1024*1024)return(v/1024/1024).toFixed(1)+' MB';return(v/1024/1024/1024).toFixed(2)+' GB';};
+  const levelClass=(l)=>l==='CRITICAL'?'bad':(l==='WARN'?'warn':'ok');
+  const showAdmin=(on)=>{$('login-panel').className=on?'wrap hide':'wrap';$('admin-panel').className=on?'wrap':'wrap hide';};
+
+  async function api(path,opt={}){
+    const res=await fetch(path,{...opt,headers:{...authHeaders(),...(opt.headers||{})}});
+    const data=await res.json().catch(()=>({}));
+    return {res,data};
+  }
+
   async function load(){
-    const res=await fetch('/api/admin/status',{headers:authHeaders});
-    const data=await res.json();
-    if(!res.ok){$('runtime').innerHTML='';$('integrity').innerHTML='';$('alerts').innerHTML='';$('backups').innerHTML='';alert('加载失败: '+(data.error||res.status));return;}
+    const {res,data}=await api('/api/admin/status');
+    if(!res.ok){showAdmin(false);$('login-msg').textContent='请先登录';return;}
+    showAdmin(true);
     $('stamp').textContent='更新时间: '+new Date().toLocaleString();
     const r=data.runtime||{};
-    $('runtime').innerHTML=[
-      ['Redis', r.redisReady?'READY':'DOWN'],['Redis URL',r.redisUrl||''],['Redis Ver',r.redisVersion||''],['Clients',r.connectedClients||0],
-      ['Memory',r.usedMemoryHuman||fmtBytes(r.usedMemory)],['AOF',String(r.aofEnabled)],['Rooms',data.rooms?.total||0],['PID',r.pid||'']
-    ].map(x=>`<div class="kv"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1])}</div></div>`).join('');
+    $('runtime').innerHTML=[['Redis',r.redisReady?'READY':'DOWN'],['Redis URL',r.redisUrl||''],['Redis Ver',r.redisVersion||''],['Clients',r.connectedClients||0],['Memory',r.usedMemoryHuman||fmtBytes(r.usedMemory)],['AOF',String(r.aofEnabled)],['Rooms',data.rooms?.total||0],['PID',r.pid||'']].map(x=>`<div class="kv"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1])}</div></div>`).join('');
     const integ=data.integrity;
-    if(!integ){$('integrity').innerHTML='<span class="warn">尚未运行完整性校验</span>';}else{
-      const cls=integ.ok?'ok':'bad';
-      $('integrity').innerHTML=`<div class="${cls}">状态: ${integ.ok?'PASS':'FAIL'} | rooms=${integ.roomCount} messages=${integ.totalMessages} issues=${(integ.issues||[]).length}</div>`+
-      `<div>最近检查: ${esc(integ.checkedAt||'')}</div>`;
-    }
+    $('integrity').innerHTML=!integ?'<span class="warn">尚未运行完整性校验</span>':`<div class="${integ.ok?'ok':'bad'}">状态: ${integ.ok?'PASS':'FAIL'} | rooms=${integ.roomCount} messages=${integ.totalMessages} issues=${(integ.issues||[]).length}</div><div>最近检查: ${esc(integ.checkedAt||'')}</div>`;
     $('alerts').innerHTML=(data.alerts||[]).map(a=>`<tr><td>${esc(a.ts)}</td><td class="${levelClass(a.level)}">${esc(a.level)}</td><td>${esc(a.event)}</td><td>${esc(JSON.stringify(a.detail||{}))}</td><td>${a.acked?'已确认':`<button class="btn" data-ack="${esc(a.id)}">确认</button>`}</td></tr>`).join('');
-    document.querySelectorAll('[data-ack]').forEach((b)=>b.onclick=async()=>{const r=await fetch('/api/admin/alerts/ack',{method:'POST',headers:{...authHeaders,'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.ack})});const d=await r.json().catch(()=>({}));if(!r.ok){alert('确认失败: '+(d.error||r.status));return;}load();});
+    document.querySelectorAll('[data-ack]').forEach((b)=>b.onclick=async()=>{const r=await api('/api/admin/alerts/ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.ack})});if(!r.res.ok){alert('确认失败');return;}load();});
     $('backups').innerHTML=(data.backups||[]).map(b=>`<tr><td>${esc(b.name)}</td><td>${esc(fmtBytes(b.size))}</td><td>${esc(b.mtime)}</td></tr>`).join('');
   }
+
+  $('login').onclick=async()=>{
+    const username=$('username').value.trim();
+    const password=$('password').value;
+    const {res,data}=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})}).then(async r=>({res:r,data:await r.json().catch(()=>({}))}));
+    if(!res.ok){$('login-msg').textContent='登录失败: '+(data.error||res.status);return;}
+    adminToken=data.token||'';
+    localStorage.setItem('arena_admin_token',adminToken);
+    $('login-msg').textContent='';
+    load();
+  };
+  $('logout').onclick=async()=>{await api('/api/admin/logout',{method:'POST'});adminToken='';localStorage.removeItem('arena_admin_token');showAdmin(false);};
   $('refresh').onclick=()=>load().catch((e)=>alert(e.message));
-  $('check').onclick=async()=>{const r=await fetch('/api/admin/check',{method:'POST',headers:authHeaders});const d=await r.json().catch(()=>({}));if(!r.ok){alert('校验失败: '+(d.error||r.status));return;}await load();};
-  load().catch((e)=>alert(e.message));
+  $('check').onclick=async()=>{const {res,data}=await api('/api/admin/check',{method:'POST'});if(!res.ok){alert('校验失败: '+(data.error||res.status));return;}load();};
+  load().catch(()=>showAdmin(false));
 })();
 </script>
 </body>

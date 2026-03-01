@@ -15,7 +15,16 @@ const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-c
 const { handleGetDashboard } = require('./lib/dashboard-handlers');
 const { handleGetRooms, handlePostRooms, handleDeleteRoom } = require('./lib/room-handlers');
 const { handlePostUsage } = require('./lib/usage-handlers');
-const { handleGetAdmin, handleGetAdminStatus, handlePostAdminCheck, handlePostAdminAlertAck, runIntegrityCheck, LAST_CHECK_KEY } = require('./lib/admin-handlers');
+const {
+  handleGetAdmin,
+  handleGetAdminStatus,
+  handlePostAdminCheck,
+  handlePostAdminAlertAck,
+  handlePostAdminLogin,
+  handlePostAdminLogout,
+  runIntegrityCheck,
+  LAST_CHECK_KEY,
+} = require('./lib/admin-handlers');
 const alerts = require('./lib/alert-center');
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
@@ -84,6 +93,8 @@ const server = http.createServer((req, res) => {
   if (method === 'POST' && urlPath === '/api/rooms') { safeAsync(handlePostRooms)(req, res, INSTANCE_ID); return; }
   if (method === 'DELETE' && urlPath === '/api/rooms') { safeAsync(handleDeleteRoom)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/internal/usage') { safeAsync(handlePostUsage)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/login') { safeAsync(handlePostAdminLogin)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/logout') { safeAsync(handlePostAdminLogout)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/check') { safeAsync(handlePostAdminCheck)(req, res, { instanceId: INSTANCE_ID, runtimeEnv: RUNTIME_ENV, port: PORT }); return; }
   if (method === 'POST' && urlPath === '/api/admin/alerts/ack') { safeAsync(handlePostAdminAlertAck)(req, res); return; }
   if (method === 'GET' && (urlPath === '/api/agent-snapshot' || urlPath === '/api/callbacks/thread-context')) {
