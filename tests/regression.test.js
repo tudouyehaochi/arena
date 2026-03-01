@@ -216,6 +216,7 @@ describe('route-handlers auth regression', () => {
     const data = JSON.parse(res.body);
     assert.equal(data.roomId, 'default');
     assert.ok(Array.isArray(data.agents));
+    assert.ok(Object.prototype.hasOwnProperty.call(data, 'route'));
   });
 
   it('POST /api/rooms works without bearer auth', async () => {

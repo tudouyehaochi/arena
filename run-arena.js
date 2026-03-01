@@ -8,6 +8,7 @@ const { createA2ARouter } = require('./lib/a2a-router');
 const { acquireRunnerLock, renewRunnerLock, releaseRunnerLock } = require('./lib/runner-lock');
 const { runAgentProcess } = require('./lib/runner-process');
 const { httpGetJson } = require('./lib/runner-http');
+const { writeRouteState } = require('./lib/runner-route-state');
 const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
 const { DEFAULT_ROOM_ID, AGENT_NAMES, resolveRoomId } = require('./lib/room');
@@ -24,7 +25,7 @@ const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
 const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 const POLL_INTERVAL = parseInt(process.env.ARENA_POLL_INTERVAL || '5000', 10);
 const MAX_AGENT_TURNS = 3;
-const MAX_A2A_DEPTH = parseInt(process.env.ARENA_MAX_A2A_DEPTH || '4', 10);
+const MAX_A2A_DEPTH = parseInt(process.env.ARENA_MAX_A2A_DEPTH || '10', 10);
 const MAX_TASKS_PER_POLL = parseInt(process.env.ARENA_MAX_TASKS_PER_POLL || '2', 10);
 const SESSION_REBUILD_EVERY = parseInt(process.env.ARENA_SESSION_REBUILD_EVERY || '6', 10);
 const REQUEST_TIMEOUT_MS = 10000;
@@ -91,12 +92,14 @@ async function invokeTask(task, recentMessages) {
   const rt = agentRuntime[task.target];
   const controller = new AbortController();
   activeAbort = controller;
+  await writeRouteState(redis.getClient(), ROOM_ID, { queued: router.stats().queued, maxDepth: MAX_A2A_DEPTH, activeTask: task, lastDropped: [] }).catch(() => {});
   try {
     await runCommand(rt.cmd, rt.buildArgs(prompt), `${task.target} (${rt.cmd === 'claude' ? 'Claude' : 'Codex'})`, controller.signal);
     invokeCount++;
     router.noteAgentInvocation(task.target, task.depth);
   } finally {
     activeAbort = null;
+    await writeRouteState(redis.getClient(), ROOM_ID, { queued: router.stats().queued, maxDepth: MAX_A2A_DEPTH, activeTask: null, lastDropped: [] }).catch(() => {});
   }
 }
 
@@ -119,6 +122,12 @@ async function pollOnce() {
     activeAbort.abort();
   }
   for (const d of route.dropped) console.log(`[route] dropped ${d.reason} target=${d.target} depth=${d.depth}`);
+  await writeRouteState(redis.getClient(), ROOM_ID, {
+    queued: route.queued,
+    maxDepth: MAX_A2A_DEPTH,
+    activeTask: activeAbort ? { status: 'running' } : null,
+    lastDropped: route.dropped,
+  }).catch(() => {});
 
   let processed = 0;
   while (processed < MAX_TASKS_PER_POLL) {
