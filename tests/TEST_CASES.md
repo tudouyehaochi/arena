@@ -1,7 +1,7 @@
 # Arena Test Cases
 
 ## Scope
-This document describes all current automated tests (`57` total) under `tests/*.test.js`.
+This document describes all current automated tests (`58` total) under `tests/*.test.js`.
 
 ## basic.test.js
 
@@ -101,7 +101,8 @@ This document describes all current automated tests (`57` total) under `tests/*.
 55. listRooms includes rooms discovered from backup log: room list can recover from log when redis index is incomplete.
 56. create room rejects duplicate room id: duplicate room creation returns conflict.
 57. deleteRoom removes backup log content and allows clean re-create: delete cleans backup data and re-create starts empty.
+58. delete then create same room id succeeds via handlers: after delete API succeeds, create API can re-create the same room id.
 
 ## Notes
 - Current test command: `npm test`.
-- Current expected result: `57/57 pass`.
+- Current expected result: `58/58 pass`.

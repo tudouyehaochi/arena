@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const { Readable } = require('node:stream');
 
 const store = require('../lib/message-store');
-const { handlePostRooms } = require('../lib/room-handlers');
+const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
 
 function tempLogFile(name) {
   return path.join(os.tmpdir(), `arena-${name}-${Date.now()}-${Math.random().toString(36).slice(2)}.log`);
@@ -27,6 +27,13 @@ function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
     const req = Readable.from([JSON.stringify(payload)]);
     req.headers = {};
     handlePostRooms(req, makeRes(resolve), instanceId);
+  });
+}
+
+function invokeDeleteRoom(roomId) {
+  return new Promise((resolve) => {
+    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: {} };
+    handleDeleteRoom(req, makeRes(resolve));
   });
 }
 
@@ -63,5 +70,17 @@ describe('room management', () => {
     assert.equal(created.status, 200);
     const snap = store.getSnapshot(roomId, 0);
     assert.equal(snap.totalMessages, 0);
+  });
+
+  it('delete then create same room id succeeds via handlers', async () => {
+    const log = tempLogFile('rooms-delete-create');
+    store._setLogFile(log);
+    const roomId = `new_day_${Date.now()}`;
+    const c1 = await invokeCreateRoom({ roomId, title: roomId, createdBy: 'tester' });
+    assert.equal(c1.status, 200);
+    const d1 = await invokeDeleteRoom(roomId);
+    assert.equal(d1.status, 200);
+    const c2 = await invokeCreateRoom({ roomId, title: roomId, createdBy: 'tester' });
+    assert.equal(c2.status, 200);
   });
 });
