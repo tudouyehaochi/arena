@@ -1,190 +1,186 @@
-const { spawn } = require('child_process');
 const path = require('path');
-const http = require('http');
 const fs = require('fs');
 const { buildPrompt } = require('./lib/prompt-builder');
 const memory = require('./lib/session-memory');
 const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
+const { createA2ARouter } = require('./lib/a2a-router');
+const { acquireRunnerLock, renewRunnerLock, releaseRunnerLock } = require('./lib/runner-lock');
+const { runAgentProcess } = require('./lib/runner-process');
+const { httpGetJson } = require('./lib/runner-http');
 const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
 const { DEFAULT_ROOM_ID, AGENT_NAMES, resolveRoomId } = require('./lib/room');
 const redis = require('./lib/redis-client');
 
 const BRANCH = currentBranch();
-const DEFAULT_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
-const DEFAULT_PORT = resolvePort({ port: process.env.PORT, environment: DEFAULT_ENV, branch: BRANCH });
-const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${DEFAULT_ENV}:${BRANCH}:${DEFAULT_PORT}`;
+const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
+const PORT = resolvePort({ port: process.env.PORT, environment: RUNTIME_ENV, branch: BRANCH });
+const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${RUNTIME_ENV}:${BRANCH}:${PORT}`;
 const ROOM_ID = resolveRoomId(process.env.ARENA_ROOM_ID || DEFAULT_ROOM_ID);
-const API_URL = process.env.ARENA_API_URL || `http://localhost:${DEFAULT_PORT}`;
-const { ARENA_INVOCATION_ID: INVOCATION_ID, ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN } = process.env;
+const API_URL = process.env.ARENA_API_URL || `http://localhost:${PORT}`;
+const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
+const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
+const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 const POLL_INTERVAL = parseInt(process.env.ARENA_POLL_INTERVAL || '5000', 10);
 const MAX_AGENT_TURNS = 3;
-const REQUEST_TIMEOUT_MS = 10000;
+const MAX_A2A_DEPTH = parseInt(process.env.ARENA_MAX_A2A_DEPTH || '4', 10);
+const MAX_TASKS_PER_POLL = parseInt(process.env.ARENA_MAX_TASKS_PER_POLL || '2', 10);
 const SESSION_REBUILD_EVERY = parseInt(process.env.ARENA_SESSION_REBUILD_EVERY || '6', 10);
+const REQUEST_TIMEOUT_MS = 10000;
 const METRICS_LOG = path.join(__dirname, 'agent-metrics.log');
-const STATE_PATH = path.join(__dirname, `runner-state.${ROOM_ID}.json`);
 const SUMMARY_PATH = path.join(__dirname, `session-summary.${ROOM_ID}.json`);
 const MCP_SCRIPT = path.join(__dirname, 'agent-arena-mcp.js');
-const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 const AGENTS = new Set(AGENT_NAMES);
 if (!INVOCATION_ID || !CALLBACK_TOKEN) process.exit(1);
 
-function httpGet(urlStr) {
-  return new Promise((resolve, reject) => {
-    const url = new URL(urlStr);
-    const req = http.get({ hostname: url.hostname, port: url.port, path: url.pathname + url.search, headers: { Authorization: AUTH_HEADER }, timeout: REQUEST_TIMEOUT_MS }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-        try { resolve(JSON.parse(data)); } catch (e) { reject(new Error(`JSON parse: ${e.message}`)); }
-      });
-    });
-    req.on('timeout', () => { req.destroy(); reject(new Error('request timeout')); });
-    req.on('error', reject);
-  });
-}
+const runnerEnv = {
+  ...process.env,
+  ARENA_API_URL: API_URL,
+  ARENA_INVOCATION_ID: INVOCATION_ID,
+  ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN,
+  ARENA_ENVIRONMENT: RUNTIME_ENV,
+  ARENA_INSTANCE_ID: INSTANCE_ID,
+  ARENA_TARGET_PORT: String(PORT),
+  ARENA_ROOM_ID: ROOM_ID,
+};
+delete runnerEnv.CLAUDECODE;
 
-function runCommand(cmd, args, label) {
-  return new Promise((resolve, reject) => {
-    console.log(`\n=== ${label} ===\n`);
-    const env = {
-      ...process.env,
-      ARENA_API_URL: API_URL,
-      ARENA_INVOCATION_ID: INVOCATION_ID,
-      ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN,
-      ARENA_ENVIRONMENT: DEFAULT_ENV,
-      ARENA_INSTANCE_ID: INSTANCE_ID,
-      ARENA_TARGET_PORT: String(DEFAULT_PORT),
-      ARENA_ROOM_ID: ROOM_ID,
-    };
-    delete env.CLAUDECODE;
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], env });
-    const isCodex = cmd === 'codex';
-    attachFilteredOutput(child.stdout, `[${label}] `, process.stdout.write.bind(process.stdout), (line) => shouldDropCodexNoise(line, isCodex));
-    attachFilteredOutput(child.stderr, `[${label} err] `, process.stderr.write.bind(process.stderr), (line) => shouldDropCodexNoise(line, isCodex));
-    child.on('close', (code) => code !== 0 ? reject(new Error(`${label} exited ${code}`)) : resolve());
-    child.on('error', reject);
-  });
-}
-function shouldDropCodexNoise(line, isCodex) {
-  if (!isCodex) return false;
-  return (
-    line.includes('responses_websocket: failed to connect to websocket') ||
-    line.includes('failed to record rollout items') ||
-    line.includes('"type":"error","message":"Reconnecting...') ||
-    line.includes('Falling back from WebSockets to HTTPS transport')
-  );
-}
-function attachFilteredOutput(stream, prefix, writeFn, shouldDrop) {
-  let buf = '';
-  stream.on('data', (d) => {
-    buf += d.toString();
-    const parts = buf.split('\n');
-    buf = parts.pop();
-    for (const line of parts) {
-      if (!shouldDrop(line)) writeFn(`${prefix}${line}\n`);
-    }
-  });
-  stream.on('end', () => {
-    if (buf && !shouldDrop(buf)) writeFn(`${prefix}${buf}`);
-  });
-}
-
-function logInvokeMetrics(agent, prompt, recentMessages, summaryOnly) {
-  const row = { ts: new Date().toISOString(), roomId: ROOM_ID, agent, promptChars: prompt.length, recentCount: recentMessages.length, summaryOnly };
-  fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
-}
-async function loadRunnerState() {
-  if (!redis.isReady()) throw new Error('redis_unavailable');
-  const v = await redis.getClient().get(`room:${ROOM_ID}:runner:lastHandledHumanSeq`);
-  return v ? { lastHandledHumanSeq: parseInt(v, 10) } : {};
-}
-async function saveRunnerState(state) {
-  try { fs.writeFileSync(STATE_PATH, JSON.stringify(state) + '\n', 'utf8'); } catch {}
-  if (!redis.isReady()) throw new Error('redis_unavailable');
-  await redis.getClient().set(`room:${ROOM_ID}:runner:lastHandledHumanSeq`, String(state.lastHandledHumanSeq || 0));
-}
-
-function pickAgent(recentMessages) {
-  if (recentMessages.length === 0) return '清风';
-  const last = recentMessages[recentMessages.length - 1];
-  const content = String(last.content ?? last.text ?? '');
-  if (content.includes('@清风')) return '清风';
-  if (content.includes('@明月')) return '明月';
-  if (last.from === '清风') return '明月';
-  if (last.from === '明月') return '清风';
-  return '清风';
-}
-
-let sessionSummary = null;
-const agentRuntime = createAgentRuntime({ API_URL, INVOCATION_ID, CALLBACK_TOKEN, RUNTIME_ENV: DEFAULT_ENV, INSTANCE_ID, TARGET_PORT: DEFAULT_PORT, ROOM_ID, runCommand, MCP_SCRIPT });
-async function invokeAgent(agent, recentMessages) {
-  const prompt = buildPrompt(agent, recentMessages, { sessionSummary });
-  logInvokeMetrics(agent, prompt, recentMessages, recentMessages.length <= 2);
-  const rt = agentRuntime[agent];
-  return runCommand(rt.cmd, rt.buildArgs(prompt), `${agent} (${rt.cmd === 'claude' ? 'Claude' : 'Codex'})`);
-}
+const runCommand = (cmd, args, label, signal) => runAgentProcess({ cmd, args, label, env: runnerEnv, signal });
+const agentRuntime = createAgentRuntime({ API_URL, INVOCATION_ID, CALLBACK_TOKEN, RUNTIME_ENV, INSTANCE_ID, TARGET_PORT: PORT, ROOM_ID, runCommand, MCP_SCRIPT });
 
 let lastSeenCursor = null;
-let running = true;
+let sessionSummary = null;
 let invokeCount = 0;
-let lastHandledHumanSeq = null;
+let router = null;
+let running = true;
+let activeAbort = null;
 let wakeResolver = null;
-function wakePolling(reason) { if (!wakeResolver) return; const fn = wakeResolver; wakeResolver = null; console.log(`[listen] wake poll (${reason})`); fn(); }
-function waitForNextTick(ms) { return new Promise((resolve) => { const t = setTimeout(() => { wakeResolver = null; resolve(); }, ms); wakeResolver = () => { clearTimeout(t); resolve(); }; }); }
+let lock = null;
+let renewTimer = null;
+
+function wakePolling(reason) {
+  if (!wakeResolver) return;
+  const fn = wakeResolver;
+  wakeResolver = null;
+  console.log(`[listen] wake poll (${reason})`);
+  fn();
+}
+
+function waitTick(ms) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => { wakeResolver = null; resolve(); }, ms);
+    wakeResolver = () => { clearTimeout(t); resolve(); };
+  });
+}
+
+function logInvoke(task, prompt, count, summaryOnly) {
+  const row = {
+    ts: new Date().toISOString(), roomId: ROOM_ID, agent: task.target, promptChars: prompt.length,
+    recentCount: count, summaryOnly, route: { sourceSeq: task.sourceSeq, sourceFrom: task.sourceFrom, depth: task.depth },
+  };
+  fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
+}
+
+async function invokeTask(task, recentMessages) {
+  const promptMessages = (invokeCount > 0 && invokeCount % SESSION_REBUILD_EVERY === 0)
+    ? recentMessages.slice(-2)
+    : recentMessages;
+  const prompt = buildPrompt(task.target, promptMessages, { sessionSummary });
+  logInvoke(task, prompt, promptMessages.length, promptMessages.length <= 2);
+  const rt = agentRuntime[task.target];
+  const controller = new AbortController();
+  activeAbort = controller;
+  try {
+    await runCommand(rt.cmd, rt.buildArgs(prompt), `${task.target} (${rt.cmd === 'claude' ? 'Claude' : 'Codex'})`, controller.signal);
+    invokeCount++;
+    router.noteAgentInvocation(task.target, task.depth);
+  } finally {
+    activeAbort = null;
+  }
+}
 
 async function pollOnce() {
-  const since = lastSeenCursor ? `?since=${lastSeenCursor}&roomId=${encodeURIComponent(ROOM_ID)}` : `?roomId=${encodeURIComponent(ROOM_ID)}`;
-  const snapshot = await httpGet(`${API_URL}/api/agent-snapshot${since}`);
+  const q = lastSeenCursor ? `?since=${lastSeenCursor}&roomId=${encodeURIComponent(ROOM_ID)}` : `?roomId=${encodeURIComponent(ROOM_ID)}`;
+  const snapshot = await httpGetJson(`${API_URL}/api/agent-snapshot${q}`, AUTH_HEADER, REQUEST_TIMEOUT_MS);
   if (lastSeenCursor !== null && snapshot.cursor === lastSeenCursor) return;
   if (lastSeenCursor === null) { lastSeenCursor = snapshot.cursor; console.log(`[poll] cursor=${lastSeenCursor} room=${ROOM_ID}`); return; }
   lastSeenCursor = snapshot.cursor;
+
   const recentMessages = snapshot.messages || [];
   if (recentMessages.length > 0) {
     sessionSummary = memory.summarizeMessages(recentMessages);
     await memory.saveSummary(sessionSummary, SUMMARY_PATH, `room:${ROOM_ID}:session:summary`);
   }
-  if (snapshot.consecutiveAgentTurns >= MAX_AGENT_TURNS) return;
-  if (snapshot.lastHumanMsgSeq && snapshot.lastHumanMsgSeq === lastHandledHumanSeq) return;
-  const promptMessages = (invokeCount > 0 && invokeCount % SESSION_REBUILD_EVERY === 0) ? recentMessages.slice(-2) : recentMessages;
-  const agent = pickAgent(recentMessages);
-  if (!agentRuntime[agent].canRun()) throw new Error(`${agent} runtime unavailable`);
-  await invokeAgent(agent, promptMessages);
-  invokeCount++;
-  if (snapshot.lastHumanMsgSeq) { lastHandledHumanSeq = snapshot.lastHumanMsgSeq; await saveRunnerState({ lastHandledHumanSeq }); }
+
+  const route = await router.ingest(recentMessages);
+  if (route.cancelRequested && activeAbort) {
+    console.log('[route] cancel requested by human');
+    activeAbort.abort();
+  }
+  for (const d of route.dropped) console.log(`[route] dropped ${d.reason} target=${d.target} depth=${d.depth}`);
+
+  let processed = 0;
+  while (processed < MAX_TASKS_PER_POLL) {
+    const task = router.nextTask();
+    if (!task) break;
+    if (snapshot.consecutiveAgentTurns >= MAX_AGENT_TURNS && AGENTS.has(task.sourceFrom)) continue;
+    if (!agentRuntime[task.target].canRun()) continue;
+    console.log(`[route] exec target=${task.target} depth=${task.depth} source=${task.sourceFrom}#${task.sourceSeq}`);
+    await invokeTask(task, recentMessages);
+    processed++;
+  }
 }
 
 async function main() {
   console.log('=== Arena Agent Runner ===');
-  console.log(`API: ${API_URL} | Room: ${ROOM_ID} | Poll: ${POLL_INTERVAL}ms`);
+  console.log(`API: ${API_URL} | Room: ${ROOM_ID} | Poll: ${POLL_INTERVAL}ms | MaxDepth: ${MAX_A2A_DEPTH}`);
   redis.startConnect();
   await redis.waitUntilReady(5000);
+  router = createA2ARouter({ roomId: ROOM_ID, redisClient: redis.getClient(), agents: AGENT_NAMES, maxDepth: MAX_A2A_DEPTH, defaultAgent: '清风' });
   sessionSummary = await memory.loadSummary(SUMMARY_PATH, `room:${ROOM_ID}:session:summary`);
-  lastHandledHumanSeq = (await loadRunnerState()).lastHandledHumanSeq || null;
+  lock = await acquireRunnerLock(redis.getClient(), ROOM_ID, `${INSTANCE_ID}:${process.pid}`);
+  renewTimer = setInterval(async () => {
+    const ok = await renewRunnerLock(redis.getClient(), lock).catch(() => false);
+    if (!ok) { console.error('[lock] lost runner lock, exiting'); process.exit(1); }
+  }, 10000);
+  renewTimer.unref();
+
   await Promise.all([agentRuntime.清风.setup().catch(() => {}), agentRuntime.明月.setup().catch(() => {})]);
   const listener = startRealtimeListener({
     apiUrl: API_URL,
     authHeader: AUTH_HEADER,
     roomId: ROOM_ID,
     onStateChange: (state) => console.log(`[listen] ${state}`),
-    onMessage: (msg) => { if (msg?.type !== 'chat' || msg?.type === 'history') return; if (msg.roomId !== ROOM_ID) return; if (!AGENTS.has(msg.from || '')) wakePolling(`chat from ${msg.from}`); },
+    onMessage: (msg) => { if (msg?.type === 'chat' && msg?.roomId === ROOM_ID) wakePolling(`chat from ${msg.from}`); },
   });
+
   const shutdown = async () => {
     running = false;
     listener.stop();
+    if (activeAbort) activeAbort.abort();
+    if (renewTimer) clearInterval(renewTimer);
     await Promise.all([agentRuntime.清风.cleanup().catch(() => {}), agentRuntime.明月.cleanup().catch(() => {})]);
+    if (lock) await releaseRunnerLock(redis.getClient(), lock).catch(() => {});
     await redis.disconnect();
     process.exit(0);
   };
+
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+
   let errors = 0;
   while (running) {
     try { await pollOnce(); errors = 0; }
-    catch (err) { errors++; const backoff = Math.min(POLL_INTERVAL * Math.pow(2, errors), 60000); console.error(`[poll error #${errors}] ${err.message}`); await new Promise((r) => setTimeout(r, backoff)); continue; }
-    await waitForNextTick(POLL_INTERVAL);
+    catch (err) {
+      errors++;
+      const backoff = Math.min(POLL_INTERVAL * Math.pow(2, errors), 60000);
+      console.error(`[poll error #${errors}] ${err.message}`);
+      await new Promise((r) => setTimeout(r, backoff));
+      continue;
+    }
+    await waitTick(POLL_INTERVAL);
   }
 }
+
 main().catch((err) => { console.error('Fatal:', err); process.exit(1); });
