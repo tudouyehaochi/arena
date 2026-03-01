@@ -15,9 +15,11 @@ function makeRes() {
     status: null,
     headers: null,
     body: '',
+    headersSent: false,
     writeHead(code, headers) {
       this.status = code;
       this.headers = headers;
+      this.headersSent = true;
     },
     end(payload) {
       this.body = payload || '';
@@ -30,17 +32,17 @@ function invokePost(payload, authHeader, runtime) {
     const req = Readable.from([JSON.stringify(payload)]);
     req.headers = authHeader ? { authorization: authHeader } : {};
     const res = makeRes();
+    const origEnd = res.end.bind(res);
+    res.end = (data) => { origEnd(data); resolve(res); };
     handlePostMessage(req, res, () => {}, runtime);
-    const end = res.end.bind(res);
-    res.end = (data) => { end(data); resolve(res); };
   });
 }
 
 describe('route-handlers auth regression', () => {
-  it('GET /api/ws-token without Authorization issues human session', () => {
+  it('GET /api/ws-token without Authorization issues human session', async () => {
     const req = { url: '/api/ws-token', headers: {} };
     const res = makeRes();
-    handleGetWsToken(req, res);
+    await handleGetWsToken(req, res);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
     const session = auth.validateWsSession(data.token);
@@ -48,14 +50,14 @@ describe('route-handlers auth regression', () => {
     assert.equal(session.identity, 'human');
   });
 
-  it('GET /api/ws-token with valid Authorization issues agent session', () => {
+  it('GET /api/ws-token with valid Authorization issues agent session', async () => {
     const creds = auth.getCredentials();
     const req = {
       url: '/api/ws-token',
       headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` },
     };
     const res = makeRes();
-    handleGetWsToken(req, res);
+    await handleGetWsToken(req, res);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
     const session = auth.validateWsSession(data.token);
@@ -63,19 +65,19 @@ describe('route-handlers auth regression', () => {
     assert.equal(session.identity, 'agent');
   });
 
-  it('GET /api/ws-token with invalid Authorization is rejected', () => {
+  it('GET /api/ws-token with invalid Authorization is rejected', async () => {
     const req = { url: '/api/ws-token', headers: { authorization: 'Bearer bad:bad' } };
     const res = makeRes();
-    handleGetWsToken(req, res);
+    await handleGetWsToken(req, res);
     assert.equal(res.status, 401);
     const data = JSON.parse(res.body);
     assert.equal(data.error, 'unauthorized');
   });
 
-  it('GET /api/agent-snapshot without Authorization is rejected', () => {
+  it('GET /api/agent-snapshot without Authorization is rejected', async () => {
     const req = { url: '/api/agent-snapshot?since=0', headers: {} };
     const res = makeRes();
-    handleGetSnapshot(req, res, 3000);
+    await handleGetSnapshot(req, res, 3000);
     assert.equal(res.status, 401);
   });
 
@@ -87,7 +89,7 @@ describe('route-handlers auth regression', () => {
       headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` },
     };
     const res = makeRes();
-    handleGetSnapshot(req, res, 3000);
+    await handleGetSnapshot(req, res, 3000);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
     assert.ok(typeof data.cursor === 'number');

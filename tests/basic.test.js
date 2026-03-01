@@ -19,31 +19,31 @@ describe('auth', () => {
     assert.ok(creds.jti, 'jti exists');
   });
 
-  it('authenticate succeeds with valid Bearer header', () => {
+  it('authenticate succeeds with valid Bearer header', async () => {
     const creds = auth.getCredentials();
     const req = { headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}:${creds.jti}` } };
-    const result = auth.authenticate(req, {});
+    const result = await auth.authenticate(req, {});
     assert.equal(result.ok, true);
   });
 
-  it('authenticate fails with wrong token', () => {
+  it('authenticate fails with wrong token', async () => {
     const creds = auth.getCredentials();
     const req = { headers: { authorization: `Bearer ${creds.invocationId}:wrong:${creds.jti}` } };
-    const result = auth.authenticate(req, {});
+    const result = await auth.authenticate(req, {});
     assert.equal(result.ok, false);
     assert.equal(result.error, 'unauthorized');
   });
 
-  it('jti replay is blocked', () => {
+  it('jti replay is blocked', async () => {
     const creds = auth.getCredentials();
     const jti = creds.jti;
     // First use succeeds
     const req1 = { headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}:${jti}` } };
-    const r1 = auth.authenticate(req1, {});
+    const r1 = await auth.authenticate(req1, {});
     assert.equal(r1.ok, true);
     // Replay with same jti fails
     const req2 = { headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}:${jti}` } };
-    const r2 = auth.authenticate(req2, {});
+    const r2 = await auth.authenticate(req2, {});
     assert.equal(r2.ok, false);
     assert.equal(r2.error, 'jti_reused');
   });

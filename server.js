@@ -7,8 +7,8 @@ const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
 const auth = require('./lib/auth');
 const store = require('./lib/message-store');
 const redis = require('./lib/redis-client');
-const redisContext = require('./lib/redis-context');
 const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } = require('./lib/route-handlers');
+const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-context-handlers');
 
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
@@ -39,46 +39,6 @@ function handleGetAgentStatus(req, res) {
   jsonResponse(res, 200, store.getSnapshot(0));
 }
 
-async function handlePostAgentContext(req, res) {
-  const authResult = auth.authenticate(req, {});
-  if (!authResult.ok) {
-    const code = authResult.error === 'token_expired' ? 403 : 401;
-    jsonResponse(res, code, { error: authResult.error });
-    return;
-  }
-  let body = '', bytes = 0;
-  const LIMIT = 10 * 1024;
-  for await (const chunk of req) {
-    bytes += chunk.length;
-    if (bytes > LIMIT) { jsonResponse(res, 413, { error: 'body_too_large' }); return; }
-    body += chunk;
-  }
-  try {
-    const parsed = JSON.parse(body);
-    const { from, currentGoal, status, lastFile, lastAction } = parsed;
-    if (!from) { jsonResponse(res, 400, { error: 'missing_from' }); return; }
-    await redisContext.setAgentContext(from, { currentGoal, status, lastFile, lastAction });
-    jsonResponse(res, 200, { status: 'ok' });
-  } catch (err) {
-    jsonResponse(res, 400, { error: err.message });
-  }
-}
-
-async function handleGetAgentContext(req, res) {
-  const authResult = auth.authenticate(req, {});
-  if (!authResult.ok) {
-    const code = authResult.error === 'token_expired' ? 403 : 401;
-    jsonResponse(res, code, { error: authResult.error });
-    return;
-  }
-  try {
-    const ctx = await redisContext.getAllAgentContext();
-    jsonResponse(res, 200, ctx);
-  } catch (err) {
-    jsonResponse(res, 500, { error: err.message });
-  }
-}
-
 // --- Route dispatch ---
 
 const routes = {
@@ -90,33 +50,37 @@ const routes = {
   'GET /api/agent-context': handleGetAgentContext,
 };
 
+function safeAsync(handler) {
+  return (req, res, ...args) => {
+    const result = handler(req, res, ...args);
+    if (result && typeof result.catch === 'function') {
+      result.catch(err => {
+        console.error(`Route error: ${err.message}`);
+        if (!res.headersSent) { res.writeHead(500); res.end('Internal Server Error'); }
+      });
+    }
+  };
+}
+
 const server = http.createServer((req, res) => {
   const method = req.method;
   const urlPath = (req.url || '/').split('?')[0];
   const key = `${method} ${urlPath}`;
 
   if (routes[key]) {
-    const result = routes[key](req, res);
-    if (result && typeof result.catch === 'function') result.catch(err => {
-      console.error(`Route error: ${err.message}`);
-      if (!res.headersSent) { res.writeHead(500); res.end('Internal Server Error'); }
-    });
+    safeAsync(routes[key])(req, res);
   } else if (method === 'POST' && urlPath === '/api/callbacks/post-message') {
-    handlePostMessage(req, res, broadcast, {
+    safeAsync(handlePostMessage)(req, res, broadcast, {
       instanceId: INSTANCE_ID,
       runtimeEnv: RUNTIME_ENV,
       targetPort: PORT,
     });
   } else if (method === 'POST' && urlPath === '/api/agent-context') {
-    handlePostAgentContext(req, res).catch(err => {
-      console.error(`Agent context error: ${err.message}`);
-      if (!res.headersSent) { res.writeHead(500); res.end('Internal Server Error'); }
-    });
+    safeAsync(handlePostAgentContext)(req, res);
   } else if (method === 'GET' && urlPath === '/api/agent-snapshot') {
-    // Auth check first, then decide full vs summary
-    handleGetSnapshot(req, res, PORT);
+    safeAsync(handleGetSnapshot)(req, res, PORT);
   } else if (method === 'GET' && urlPath === '/api/callbacks/thread-context') {
-    handleGetSnapshot(req, res, PORT);
+    safeAsync(handleGetSnapshot)(req, res, PORT);
   } else {
     res.writeHead(404); res.end('Not Found');
   }
