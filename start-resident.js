@@ -9,7 +9,7 @@ const { inferEnvironment, resolvePort, resolveApiUrl } = require('./lib/runtime-
 const SERVER_CMD = process.env.ARENA_SERVER_CMD || 'node';
 const SERVER_ARGS = process.env.ARENA_SERVER_ARGS ? process.env.ARENA_SERVER_ARGS.split(' ') : ['server.js'];
 const RUNNER_CMD = process.env.ARENA_RUNNER_CMD || 'node';
-const RUNNER_ARGS = process.env.ARENA_RUNNER_ARGS ? process.env.ARENA_RUNNER_ARGS.split(' ') : ['run-arena.js'];
+const RUNNER_ARGS = process.env.ARENA_RUNNER_ARGS ? process.env.ARENA_RUNNER_ARGS.split(' ') : ['run-room-runners.js'];
 
 let serverProc = null;
 let runnerProc = null;
@@ -129,7 +129,7 @@ function spawnRunner() {
     ARENA_INVOCATION_ID: invocationId,
     ARENA_CALLBACK_TOKEN: callbackToken,
   };
-  log(`starting runner: ${RUNNER_CMD} ${RUNNER_ARGS.join(' ')}`);
+  log(`starting runner-manager: ${RUNNER_CMD} ${RUNNER_ARGS.join(' ')}`);
   runnerProc = spawn(RUNNER_CMD, RUNNER_ARGS, {
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
