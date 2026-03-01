@@ -98,7 +98,7 @@ This document describes all current automated tests (`58` total) under `tests/*.
 
 ## room-management.test.js
 
-55. listRooms includes rooms discovered from backup log: room list can recover from log when redis index is incomplete.
+55. listRooms does not resurrect deleted room from backup log only: stale log lines cannot bring a deleted room back.
 56. create room rejects duplicate room id: duplicate room creation returns conflict.
 57. deleteRoom removes backup log content and allows clean re-create: delete cleans backup data and re-create starts empty.
 58. delete then create same room id succeeds via handlers: after delete API succeeds, create API can re-create the same room id.

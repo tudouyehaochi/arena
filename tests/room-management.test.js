@@ -38,12 +38,17 @@ function invokeDeleteRoom(roomId) {
 }
 
 describe('room management', () => {
-  it('listRooms includes rooms discovered from backup log', async () => {
-    const log = tempLogFile('rooms-list');
-    fs.writeFileSync(log, `${JSON.stringify({ type: 'chat', from: 'u', content: 'x', roomId: 'new_day_discovered', timestamp: Date.now() })}\n`, 'utf8');
+  it('listRooms does not resurrect deleted room from backup log only', async () => {
+    const log = tempLogFile('rooms-list-no-resurrect');
+    const roomId = `new_day_deleted_${Date.now()}`;
     store._setLogFile(log);
+    const c1 = await invokeCreateRoom({ roomId, title: roomId, createdBy: 'tester' });
+    assert.equal(c1.status, 200);
+    const d1 = await invokeDeleteRoom(roomId);
+    assert.equal(d1.status, 200);
+    fs.appendFileSync(log, `${JSON.stringify({ type: 'chat', from: 'u', content: 'stale', roomId, timestamp: Date.now() })}\n`, 'utf8');
     const rooms = await store.listRooms();
-    assert.ok(rooms.some((r) => r.roomId === 'new_day_discovered'));
+    assert.ok(!rooms.some((r) => r.roomId === roomId));
   });
 
   it('create room rejects duplicate room id', async () => {
