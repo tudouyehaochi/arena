@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { getEnv, currentBranch } = require('./lib/env');
-const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
+const { inferEnvironment, resolvePort, resolveBindHost, resolvePublicBaseUrl } = require('./lib/runtime-config');
 const { DEFAULT_ROOM_ID, resolveRoomIdFromUrl } = require('./lib/room');
 const runtimeRegistry = require('./lib/runtime-registry');
 const auth = require('./lib/auth');
@@ -15,6 +15,7 @@ const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-c
 const { handleGetDashboard } = require('./lib/dashboard-handlers');
 const { handleGetRooms, handlePostRooms, handleDeleteRoom } = require('./lib/room-handlers');
 const { handlePostUsage } = require('./lib/usage-handlers');
+const { servePublicFile } = require('./lib/static-serve');
 const {
   handleGetAdmin,
   handleGetAdminStatus,
@@ -29,6 +30,8 @@ const alerts = require('./lib/alert-center');
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
 const PORT = resolvePort({ port: process.env.PORT, environment: RUNTIME_ENV, branch: BRANCH });
+const BIND_HOST = resolveBindHost(process.env.ARENA_BIND_HOST);
+const PUBLIC_BASE_URL = resolvePublicBaseUrl({ publicBaseUrl: process.env.ARENA_PUBLIC_BASE_URL, port: PORT });
 const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${RUNTIME_ENV}:${BRANCH}:${PORT}`;
 const DEFAULT_ROOM = process.env.ARENA_ROOM_ID || DEFAULT_ROOM_ID;
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
@@ -51,7 +54,18 @@ function handleGetMessages(req, res) {
   catch { jsonResponse(res, 400, { error: 'invalid_room_id' }); }
 }
 function handleGetEnv(_req, res) {
-  jsonResponse(res, 200, { ...getEnv(), runtimeEnvironment: RUNTIME_ENV, branch: BRANCH, port: PORT, instanceId: INSTANCE_ID, defaultRoomId: DEFAULT_ROOM });
+  jsonResponse(res, 200, {
+    ...getEnv(),
+    runtimeEnvironment: RUNTIME_ENV,
+    branch: BRANCH,
+    port: PORT,
+    bindHost: BIND_HOST,
+    instanceId: INSTANCE_ID,
+    defaultRoomId: DEFAULT_ROOM,
+    publicBaseUrl: PUBLIC_BASE_URL,
+    publicWebUrl: `${PUBLIC_BASE_URL}/?roomId=${encodeURIComponent(DEFAULT_ROOM)}`,
+    publicAdminUrl: `${PUBLIC_BASE_URL}/admin?adminKey=${encodeURIComponent(ADMIN_KEY)}`,
+  });
 }
 function handleGetAgentStatus(req, res) {
   try { jsonResponse(res, 200, store.getSnapshot(roomFromReq(req), 0)); }
@@ -59,6 +73,7 @@ function handleGetAgentStatus(req, res) {
 }
 const routes = {
   'GET /': handleGetIndex,
+  'GET /lianliankan': servePublicFile('lianliankan.html'),
   'GET /api/messages': handleGetMessages,
   'GET /api/env': handleGetEnv,
   'GET /api/agent-status': handleGetAgentStatus,
@@ -169,21 +184,23 @@ async function start() {
     runtimeRegistry.heartbeatInstance(INSTANCE_ID).catch(() => {});
   }, 30000);
   heartbeatTimer.unref();
-  server.listen(PORT, () => {
+  server.listen(PORT, BIND_HOST, () => {
     const creds = auth.getCredentials();
     const credsFile = process.env.ARENA_CREDENTIALS_FILE;
     if (credsFile) {
       try { fs.writeFileSync(credsFile, JSON.stringify({ invocationId: creds.invocationId, callbackToken: creds.callbackToken, jti: creds.jti })); }
       catch (e) { console.error(`Failed to write credentials file: ${e.message}`); }
     }
-    console.log(`Arena chatroom running at http://localhost:${PORT}`);
+    console.log(`Arena chatroom listening on ${BIND_HOST}:${PORT}`);
     console.log(`Environment: ${RUNTIME_ENV} | Branch: ${BRANCH}`);
     console.log(`Instance: ${INSTANCE_ID} | Default room: ${DEFAULT_ROOM}`);
+    console.log(`Public base URL: ${PUBLIC_BASE_URL}`);
+    console.log(`Chat URL: ${PUBLIC_BASE_URL}/?roomId=${encodeURIComponent(DEFAULT_ROOM)}`);
     console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
     console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
     console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);
     console.log(`Auth header: Authorization: Bearer ${creds.invocationId}:${creds.callbackToken}:${creds.jti}`);
-    console.log(`Admin URL: http://localhost:${PORT}/admin?adminKey=${ADMIN_KEY}`);
+    console.log(`Admin URL: ${PUBLIC_BASE_URL}/admin?adminKey=${ADMIN_KEY}`);
     console.log('--------------------------------------------------\n');
   });
 }
