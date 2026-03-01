@@ -59,4 +59,23 @@ describe('a2a-router', () => {
     assert.equal(r.cancelRequested, true);
     assert.equal(router.nextTask(), null);
   });
+
+  it('self mention does not trigger self task', async () => {
+    const router = createA2ARouter({ roomId: 'default', redisClient: fakeRedis(), agents: ['清风', '明月'], defaultAgent: '清风' });
+    router.noteAgentInvocation('明月', 1);
+    const r = await router.ingest([{ seq: 21, from: '明月', content: '@明月 我再补一句' }]);
+    assert.equal(r.added.length, 0);
+  });
+
+  it('human message resets depth chain', async () => {
+    const router = createA2ARouter({ roomId: 'default', redisClient: fakeRedis(), agents: ['清风', '明月'], maxDepth: 2 });
+    router.noteAgentInvocation('清风', 2);
+    const r1 = await router.ingest([{ seq: 30, from: '清风', content: '@明月 接力' }]);
+    assert.equal(r1.added.length, 0);
+    assert.equal(r1.dropped[0].reason, 'depth_limit');
+
+    const r2 = await router.ingest([{ seq: 31, from: '镇元子', content: '@明月 新话题' }]);
+    assert.equal(r2.added.length, 1);
+    assert.equal(r2.added[0].depth, 1);
+  });
 });
