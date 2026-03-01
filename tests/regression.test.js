@@ -79,9 +79,9 @@ describe('route-handlers auth regression', () => {
     assert.equal(res.status, 401);
   });
 
-  it('GET /api/agent-snapshot with Authorization returns snapshot', () => {
+  it('GET /api/agent-snapshot with Authorization returns snapshot', async () => {
     const creds = auth.getCredentials();
-    store.addMessage({ type: 'chat', from: '镇元子', content: 'snapshot seed' });
+    await store.addMessage({ type: 'chat', from: '镇元子', content: 'snapshot seed' });
     const req = {
       url: '/api/agent-snapshot?since=0',
       headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` },

@@ -8,25 +8,22 @@ const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
 const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
+const redis = require('./lib/redis-client');
+const BRANCH = currentBranch();
 const DEFAULT_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
-const DEFAULT_PORT = resolvePort({ port: process.env.PORT, environment: DEFAULT_ENV, branch: currentBranch() });
-const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${DEFAULT_ENV}:${currentBranch()}:${DEFAULT_PORT}`;
+const DEFAULT_PORT = resolvePort({ port: process.env.PORT, environment: DEFAULT_ENV, branch: BRANCH });
+const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${DEFAULT_ENV}:${BRANCH}:${DEFAULT_PORT}`;
 const API_URL = process.env.ARENA_API_URL || `http://localhost:${DEFAULT_PORT}`;
-const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
-const CALLBACK_TOKEN = process.env.ARENA_CALLBACK_TOKEN;
+const { ARENA_INVOCATION_ID: INVOCATION_ID, ARENA_CALLBACK_TOKEN: CALLBACK_TOKEN } = process.env;
 const POLL_INTERVAL = parseInt(process.env.ARENA_POLL_INTERVAL || '5000', 10);
-const MAX_AGENT_TURNS = 3;
-const REQUEST_TIMEOUT_MS = 10000;
+const MAX_AGENT_TURNS = 3, REQUEST_TIMEOUT_MS = 10000;
 const SESSION_REBUILD_EVERY = parseInt(process.env.ARENA_SESSION_REBUILD_EVERY || '6', 10);
 const METRICS_LOG = path.join(__dirname, 'agent-metrics.log');
 const STATE_PATH = path.join(__dirname, 'runner-state.json');
 const MCP_SCRIPT = path.join(__dirname, 'agent-arena-mcp.js');
 const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
 const AGENTS = new Set(['清风', '明月']);
-if (!INVOCATION_ID || !CALLBACK_TOKEN) {
-  console.error('Missing ARENA_INVOCATION_ID or ARENA_CALLBACK_TOKEN');
-  process.exit(1);
-}
+if (!INVOCATION_ID || !CALLBACK_TOKEN) { console.error('Missing ARENA_INVOCATION_ID or ARENA_CALLBACK_TOKEN'); process.exit(1); }
 function httpGet(urlStr) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
@@ -69,11 +66,16 @@ function logInvokeMetrics(agent, prompt, recentMessages, summaryOnly) {
   const row = { ts: new Date().toISOString(), agent, promptChars: prompt.length, recentCount: recentMessages.length, summaryOnly };
   fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
 }
-function loadRunnerState() {
-  try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return {}; }
+function readStateFile() { try { return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')); } catch { return {}; } }
+async function loadRunnerState() {
+  return redis.withFallback(async () => {
+    const val = await redis.getClient().get('arena:runner:lastHandledHumanSeq');
+    return val ? { lastHandledHumanSeq: parseInt(val, 10) } : readStateFile();
+  }, readStateFile);
 }
-function saveRunnerState(state) {
+async function saveRunnerState(state) {
   try { fs.writeFileSync(STATE_PATH, JSON.stringify(state) + '\n', 'utf8'); } catch {}
+  await redis.withFallback(() => redis.getClient().set('arena:runner:lastHandledHumanSeq', String(state.lastHandledHumanSeq || 0)), () => {});
 }
 function pickAgent(recentMessages) {
   if (recentMessages.length === 0) return '清风';
@@ -85,7 +87,7 @@ function pickAgent(recentMessages) {
   if (lastMsg.from === '明月') return '清风';
   return '清风';
 }
-let sessionSummary = memory.loadSummary();
+let sessionSummary = null;
 const agentRuntime = createAgentRuntime({
   API_URL,
   INVOCATION_ID,
@@ -105,7 +107,7 @@ async function invokeAgent(agent, recentMessages) {
 let lastSeenCursor = null;
 let running = true;
 let invokeCount = 0;
-let lastHandledHumanSeq = loadRunnerState().lastHandledHumanSeq || null;
+let lastHandledHumanSeq = null;
 let wakeResolver = null;
 function wakePolling(reason) {
   if (!wakeResolver) return;
@@ -133,7 +135,7 @@ async function pollOnce() {
   const recentMessages = snapshot.messages || [];
   if (recentMessages.length > 0) {
     sessionSummary = memory.summarizeMessages(recentMessages);
-    memory.saveSummary(sessionSummary);
+    await memory.saveSummary(sessionSummary);
   }
   if (snapshot.consecutiveAgentTurns >= MAX_AGENT_TURNS) return console.log(`[poll] Agent turns ${snapshot.consecutiveAgentTurns} >= ${MAX_AGENT_TURNS}, silent`);
   if (snapshot.lastHumanMsgSeq && snapshot.lastHumanMsgSeq === lastHandledHumanSeq) return console.log(`[poll] Human seq ${snapshot.lastHumanMsgSeq} already handled`);
@@ -146,12 +148,15 @@ async function pollOnce() {
   invokeCount++;
   if (snapshot.lastHumanMsgSeq) {
     lastHandledHumanSeq = snapshot.lastHumanMsgSeq;
-    saveRunnerState({ lastHandledHumanSeq });
+    await saveRunnerState({ lastHandledHumanSeq });
   }
 }
 async function main() {
   console.log('=== Arena Agent Runner ===');
   console.log(`API: ${API_URL} | Poll: ${POLL_INTERVAL}ms | Max turns: ${MAX_AGENT_TURNS}`);
+  redis.startConnect();
+  sessionSummary = await memory.loadSummary();
+  lastHandledHumanSeq = (await loadRunnerState()).lastHandledHumanSeq || null;
   await Promise.all([
     agentRuntime.清风.setup().catch((e) => console.error('清风 MCP setup failed:', e.message)),
     agentRuntime.明月.setup().catch((e) => console.error('明月 MCP setup failed:', e.message)),
@@ -174,6 +179,7 @@ async function main() {
       agentRuntime.清风.cleanup().catch(() => {}),
       agentRuntime.明月.cleanup().catch(() => {}),
     ]);
+    await redis.disconnect();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);

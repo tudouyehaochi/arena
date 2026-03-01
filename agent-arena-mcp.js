@@ -80,11 +80,38 @@ server.tool(
 
 server.tool(
   'arena_get_context',
-  'Get recent messages from the Arena chatroom',
-  { detail: z.boolean().optional().describe('If true, return full snapshot. Default false returns concise summary.') },
-  async ({ detail = false }) => {
+  'Get recent messages from the Arena chatroom, optionally including agent context',
+  {
+    detail: z.boolean().optional().describe('If true, return full snapshot. Default false returns concise summary.'),
+    agentContext: z.boolean().optional().describe('If true, include partner agent structured context.'),
+  },
+  async ({ detail = false, agentContext = false }) => {
     const endpoint = detail ? 'agent-snapshot' : 'agent-snapshot?summary=1';
     const result = await httpRequest('GET', `${API_URL}/api/${endpoint}`);
+    if (agentContext) {
+      try {
+        const ctx = await httpRequest('GET', `${API_URL}/api/agent-context`);
+        result.agentContext = ctx;
+      } catch {}
+    }
+    return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+  }
+);
+
+server.tool(
+  'arena_set_context',
+  'Update your structured context so your partner agent can see your status',
+  {
+    from: z.string().describe('Your agent name (e.g. "清风" or "明月")'),
+    currentGoal: z.string().optional().describe('What you are currently working on'),
+    status: z.string().optional().describe('Your current status (e.g. "coding", "testing", "done", "idle")'),
+    lastFile: z.string().optional().describe('Last file you worked on'),
+    lastAction: z.string().optional().describe('Last action you took'),
+  },
+  async ({ from, currentGoal, status, lastFile, lastAction }) => {
+    const result = await httpRequest('POST', `${API_URL}/api/agent-context`, {
+      from, currentGoal, status, lastFile, lastAction,
+    });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }
 );

@@ -69,8 +69,8 @@ describe('message-store', () => {
   // Disable log file writes during tests to avoid polluting chatroom.log
   store._setLogFile(null);
 
-  it('addMessage assigns seq and timestamp', () => {
-    const msg = store.addMessage({ type: 'chat', from: 'testUser', content: 'hello' });
+  it('addMessage assigns seq and timestamp', async () => {
+    const msg = await store.addMessage({ type: 'chat', from: 'testUser', content: 'hello' });
     assert.ok(msg.seq > 0, 'seq is positive');
     assert.ok(msg.timestamp > 0, 'timestamp is set');
     assert.equal(msg.content, 'hello');
@@ -83,16 +83,16 @@ describe('message-store', () => {
     assert.ok(snap.totalMessages > 0);
   });
 
-  it('consecutiveAgentTurns increments for agents', () => {
+  it('consecutiveAgentTurns increments for agents', async () => {
     // Reset by sending a human message
-    store.addMessage({ type: 'chat', from: '镇元子', content: 'reset' });
+    await store.addMessage({ type: 'chat', from: '镇元子', content: 'reset' });
     assert.equal(store.getAgentTurns(), 0);
-    store.addMessage({ type: 'chat', from: '清风', content: 'agent msg 1' });
+    await store.addMessage({ type: 'chat', from: '清风', content: 'agent msg 1' });
     assert.equal(store.getAgentTurns(), 1);
-    store.addMessage({ type: 'chat', from: '明月', content: 'agent msg 2' });
+    await store.addMessage({ type: 'chat', from: '明月', content: 'agent msg 2' });
     assert.equal(store.getAgentTurns(), 2);
     // Human resets counter
-    store.addMessage({ type: 'chat', from: '镇元子', content: 'human msg' });
+    await store.addMessage({ type: 'chat', from: '镇元子', content: 'human msg' });
     assert.equal(store.getAgentTurns(), 0);
   });
 
