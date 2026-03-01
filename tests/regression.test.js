@@ -166,6 +166,24 @@ describe('route-handlers auth regression', () => {
     assert.equal(totalAfter, totalBefore + 1);
   });
 
+  it('POST /api/callbacks/post-message blocks consecutive status-only agent replies', async () => {
+    const creds = auth.getCredentials();
+    const authHeader = `Bearer ${creds.invocationId}:${creds.callbackToken}`;
+    const runtime = { instanceId: 'dev:dev:3000', runtimeEnv: 'dev', targetPort: 3000 };
+    const base = {
+      from: '明月',
+      roomId: 'default',
+      instanceId: 'dev:dev:3000',
+      runtimeEnv: 'dev',
+      targetPort: 3000,
+    };
+    const r1 = await invokePost({ ...base, content: '收到，我先处理。', idempotencyKey: 'status-loop-1' }, authHeader, runtime);
+    const r2 = await invokePost({ ...base, content: '在执行，稍后回报。', idempotencyKey: 'status-loop-2' }, authHeader, runtime);
+    assert.equal(r1.status, 200);
+    assert.equal(r2.status, 409);
+    assert.equal(JSON.parse(r2.body).error, 'status_without_progress');
+  });
+
   it('GET /api/agent-snapshot returns room_not_found for deleted room', async () => {
     const roomId = `deleted_room_${Date.now()}`;
     const created = await invokeCreateRoom({ roomId, title: roomId, createdBy: 'tester' });
@@ -256,6 +274,7 @@ describe('prompt-builder regression', () => {
     assert.match(prompt, /## 行为铁律/);
     assert.match(prompt, /## 编码规范/);
     assert.match(prompt, /单文件不超过 200 行/);
+    assert.match(prompt, /先完成一个最小动作/);
   });
 
   it('non-coding context still contains core rules', () => {
