@@ -27,12 +27,15 @@ const POLL_INTERVAL = parseInt(process.env.ARENA_POLL_INTERVAL || '5000', 10);
 const MAX_AGENT_TURNS = 3;
 const MAX_A2A_DEPTH = parseInt(process.env.ARENA_MAX_A2A_DEPTH || '10', 10);
 const MAX_TASKS_PER_POLL = parseInt(process.env.ARENA_MAX_TASKS_PER_POLL || '2', 10);
-const SESSION_REBUILD_EVERY = parseInt(process.env.ARENA_SESSION_REBUILD_EVERY || '6', 10);
+const SESSION_REBUILD_EVERY = parseInt(process.env.ARENA_SESSION_REBUILD_EVERY || '3', 10);
 const REQUEST_TIMEOUT_MS = 10000;
 const METRICS_LOG = path.join(__dirname, 'agent-metrics.log');
 const SUMMARY_PATH = path.join(__dirname, `session-summary.${ROOM_ID}.json`);
 const MCP_SCRIPT = path.join(__dirname, 'agent-arena-mcp.js');
 const AGENTS = new Set(AGENT_NAMES);
+const PROMPT_MODE = String(process.env.ARENA_PROMPT_MODE || 'optimized').trim().toLowerCase() === 'legacy'
+  ? 'legacy'
+  : 'optimized';
 if (!INVOCATION_ID || !CALLBACK_TOKEN) process.exit(1);
 
 const runnerEnv = {
@@ -60,6 +63,23 @@ let wakeResolver = null;
 let lock = null;
 let renewTimer = null;
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function acquireRoomLockWithRetry(redisClient, roomId, owner) {
+  while (true) {
+    try {
+      return await acquireRunnerLock(redisClient, roomId, owner);
+    } catch (err) {
+      const msg = err && err.message ? String(err.message) : '';
+      if (!msg.startsWith('runner_lock_busy:')) throw err;
+      console.log(`[lock] busy room=${roomId}, retry in 5000ms`);
+      await wait(5000);
+    }
+  }
+}
+
 function wakePolling(reason) {
   if (!wakeResolver) return;
   const fn = wakeResolver;
@@ -78,7 +98,15 @@ function waitTick(ms) {
 function logInvoke(task, prompt, count, summaryOnly) {
   const row = {
     ts: new Date().toISOString(), roomId: ROOM_ID, agent: task.target, promptChars: prompt.length,
-    recentCount: count, summaryOnly, route: { sourceSeq: task.sourceSeq, sourceFrom: task.sourceFrom, depth: task.depth },
+    recentCount: count,
+    summaryOnly,
+    promptMode: PROMPT_MODE,
+    route: {
+      sourceSeq: task.sourceSeq,
+      sourceFrom: task.sourceFrom,
+      sourceType: AGENTS.has(task.sourceFrom) ? 'agent' : 'human',
+      depth: task.depth,
+    },
   };
   fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
 }
@@ -87,7 +115,7 @@ async function invokeTask(task, recentMessages) {
   const promptMessages = (invokeCount > 0 && invokeCount % SESSION_REBUILD_EVERY === 0)
     ? recentMessages.slice(-2)
     : recentMessages;
-  const prompt = buildPrompt(task.target, promptMessages, { sessionSummary });
+  const prompt = buildPrompt(task.target, promptMessages, { sessionSummary, promptMode: PROMPT_MODE });
   logInvoke(task, prompt, promptMessages.length, promptMessages.length <= 2);
   const rt = agentRuntime[task.target];
   const controller = new AbortController();
@@ -148,7 +176,7 @@ async function main() {
   await redis.waitUntilReady(5000);
   router = createA2ARouter({ roomId: ROOM_ID, redisClient: redis.getClient(), agents: AGENT_NAMES, maxDepth: MAX_A2A_DEPTH, defaultAgent: '清风' });
   sessionSummary = await memory.loadSummary(SUMMARY_PATH, `room:${ROOM_ID}:session:summary`);
-  lock = await acquireRunnerLock(redis.getClient(), ROOM_ID, `${INSTANCE_ID}:${process.pid}`);
+  lock = await acquireRoomLockWithRetry(redis.getClient(), ROOM_ID, `${INSTANCE_ID}:${process.pid}`);
   renewTimer = setInterval(async () => {
     const ok = await renewRunnerLock(redis.getClient(), lock).catch(() => false);
     if (!ok) { console.error('[lock] lost runner lock, exiting'); process.exit(1); }

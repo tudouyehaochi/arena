@@ -5,6 +5,8 @@
   "main": "unified-cli.js",
   "scripts": {
     "test": "ARENA_USE_MEMORY_REDIS=1 node --test tests/*.test.js",
+    "prompt:ab": "node scripts/prompt-ab-eval.js",
+    "prompt:metrics": "node scripts/prompt-metrics-report.js",
     "start:resident": "node start-resident.js",
     "worktree:setup": "bash scripts/setup-worktrees.sh",
     "start:branch": "bash scripts/start-branch-resident.sh",

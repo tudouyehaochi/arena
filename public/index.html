@@ -1,51 +1,531 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Arena Chatroom</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Arena Chatroom</title>
 <style>
-:root{--ink:#1f2937;--muted:#6b7280;--panel:#fff;--line:#dbe3ef;--brand:#2563eb;--radius:16px}*{box-sizing:border-box}
-body{margin:0;font-family:"Avenir Next","SF Pro Text","PingFang SC",sans-serif;color:var(--ink);background:radial-gradient(1200px 600px at -20% -10%,#dbeafe 0,#f3f6fb 50%),radial-gradient(1200px 700px at 120% 120%,#e0f2fe 0,#f3f6fb 55%);height:100vh}
-.layout{display:grid;grid-template-columns:340px 1fr;height:100vh;gap:14px;padding:14px}.sidebar,.main{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 8px 24px rgba(15,23,42,.06)}
-.sidebar{padding:14px;display:flex;flex-direction:column;gap:12px;overflow:auto}.main{display:flex;flex-direction:column;overflow:hidden}.head{display:flex;align-items:center;gap:10px}.dot{width:10px;height:10px;border-radius:99px;background:#22c55e}.title{font-size:18px;font-weight:700}.meta{font-size:12px;color:var(--muted)}.tag{font-size:12px;padding:4px 10px;border-radius:999px;background:#eef2ff;color:#334155;font-weight:600}
-.row{display:flex;align-items:center;gap:8px}.sp{margin-left:auto}.btn{border:none;background:var(--brand);color:#fff;padding:8px 12px;border-radius:10px;font-weight:700;cursor:pointer}.ghost{background:#fff;color:#1e3a8a;border:1px solid #bfdbfe}.danger{background:#fff1f2;color:#9f1239;border:1px solid #fecdd3}
-.rooms{border:1px solid var(--line);border-radius:12px;padding:8px;background:#f8fafc}.rooms h4{font-size:12px;margin:0 0 8px;color:#475569}.rooms .list{display:flex;flex-wrap:wrap;gap:6px}.rbtn{font-size:12px;border:1px solid var(--line);background:#fff;padding:4px 8px;border-radius:999px;cursor:pointer}.rbtn.active{background:#dbeafe;border-color:#93c5fd}
-.search{width:100%;border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px}
-.statgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.stat{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:10px}.stat .k{font-size:11px;color:var(--muted)}.stat .v{font-weight:700;margin-top:4px}
-.agent{border:1px solid var(--line);border-radius:14px;padding:10px;background:linear-gradient(180deg,#fff,#f8fbff)}.agent-avatar{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;font-weight:700;color:#fff}.name{font-weight:700}.sub{font-size:12px;color:var(--muted)}.pill{margin-left:auto;font-size:11px;padding:3px 8px;border-radius:999px;background:#ecfeff;color:#155e75}.line{margin-top:8px;font-size:12px;color:#334155}
-.header{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,#fff,#f9fbff)}.messages{flex:1;overflow:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px}
-.msg-row{display:flex;align-items:flex-start;gap:8px}.msg-row.mine{justify-content:flex-end}.msg-avatar{width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;flex:0 0 auto}
-.msg{max-width:72%;padding:10px 12px;border-radius:16px;border:1px solid var(--line);box-shadow:0 4px 14px rgba(15,23,42,.04)}.msg .m{font-size:11px;color:var(--muted);margin-bottom:4px}.msg .u{font-size:11px;color:#475569;margin-top:6px;padding-top:6px;border-top:1px dashed #d1d5db}
-.msg.system{align-self:center;background:#f8fafc;color:var(--muted);max-width:90%;text-align:center}.msg.mine{background:#ecfdf5;border-color:#bbf7d0}.msg.qingfeng{background:#ecfeff;border-color:#99f6e4}.msg.mingyue{background:#eff6ff;border-color:#bfdbfe}.msg.other{background:#fff}
-.input{display:flex;gap:8px;padding:12px;border-top:1px solid var(--line);background:#fff}.input input,.input select{border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:#fff;color:var(--ink)}#username{width:100px}#msg{flex:1}
-@media (max-width:920px){.layout{grid-template-columns:1fr}.sidebar{max-height:42vh}}
+:root {
+  --ink: #1f2937;
+  --muted: #6b7280;
+  --panel: #fff;
+  --line: #dbe3ef;
+  --brand: #2563eb;
+  --radius: 16px;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; overflow-x: hidden; }
+body {
+  margin: 0;
+  font-family: "Avenir Next", "SF Pro Text", "PingFang SC", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 600px at -20% -10%, #dbeafe 0, #f3f6fb 50%),
+    radial-gradient(1200px 700px at 120% 120%, #e0f2fe 0, #f3f6fb 55%);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.sidebar,
+.main {
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+}
+.sidebar {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+}
+.main {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.head { display: flex; align-items: center; gap: 10px; }
+.dot { width: 10px; height: 10px; border-radius: 99px; background: #22c55e; }
+.title { font-size: 18px; font-weight: 700; }
+.meta { font-size: 12px; color: var(--muted); }
+.tag {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: #334155;
+  font-weight: 600;
+}
+.row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sp { margin-left: auto; }
+.btn {
+  border: none;
+  background: var(--brand);
+  color: #fff;
+  padding: 10px 12px;
+  min-height: 42px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.ghost { background: #fff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+.danger { background: #fff1f2; color: #9f1239; border: 1px solid #fecdd3; }
+.rooms {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 8px;
+  background: #f8fafc;
+}
+.rooms h4 { font-size: 12px; margin: 0 0 8px; color: #475569; }
+.rooms .list { display: flex; flex-wrap: wrap; gap: 6px; }
+.rbtn {
+  font-size: 12px;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 8px 10px;
+  min-height: 38px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.rbtn.active { background: #dbeafe; border-color: #93c5fd; }
+.search {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat { background: #f8fafc; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.stat .k { font-size: 11px; color: var(--muted); }
+.stat .v { font-weight: 700; margin-top: 4px; }
+.agent { border: 1px solid var(--line); border-radius: 14px; padding: 10px; background: linear-gradient(180deg, #fff, #f8fbff); }
+.agent-avatar { width: 34px; height: 34px; border-radius: 999px; display: grid; place-items: center; font-weight: 700; color: #fff; }
+.name { font-weight: 700; }
+.sub { font-size: 12px; color: var(--muted); }
+.pill { margin-left: auto; font-size: 11px; padding: 3px 8px; border-radius: 999px; background: #ecfeff; color: #155e75; }
+.line { margin-top: 8px; font-size: 12px; color: #334155; }
+.header {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(180deg, #fff, #f9fbff);
+}
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overflow-x: hidden;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.msg-row { display: flex; align-items: flex-start; gap: 8px; }
+.msg-row.mine { justify-content: flex-end; }
+.msg-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  flex: 0 0 auto;
+}
+.msg {
+  width: fit-content;
+  max-width: min(85%, 72ch);
+  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04);
+}
+.msg .m { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.msg .u { font-size: 11px; color: #475569; margin-top: 6px; padding-top: 6px; border-top: 1px dashed #d1d5db; }
+.msg.system { align-self: center; background: #f8fafc; color: var(--muted); max-width: 95%; text-align: center; }
+.msg.mine { background: #ecfdf5; border-color: #bbf7d0; }
+.msg.qingfeng { background: #ecfeff; border-color: #99f6e4; }
+.msg.mingyue { background: #eff6ff; border-color: #bfdbfe; }
+.msg.other { background: #fff; }
+.input {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  align-items: flex-end;
+  position: sticky;
+  bottom: 0;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+}
+.input textarea,
+.input input,
+.input select {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #fff;
+  color: var(--ink);
+}
+#username { width: 100px; }
+#msg {
+  flex: 1;
+  min-height: 42px;
+  max-height: 140px;
+  resize: none;
+  font: inherit;
+  line-height: 1.4;
+}
+#send-mode { min-height: 42px; }
+
+@media (max-width: 920px) {
+  .layout {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 10px;
+  }
+  .sidebar {
+    max-height: 38vh;
+    border-radius: 14px;
+  }
+  .main {
+    min-height: 56vh;
+    border-radius: 14px;
+  }
+  .msg { max-width: 92%; }
+}
+
+@media (max-width: 560px) {
+  .header,
+  .messages { padding-left: 12px; padding-right: 12px; }
+  .input {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  #username,
+  #send-mode {
+    width: 100%;
+  }
+  #msg {
+    grid-column: 1 / span 2;
+  }
+  #send {
+    grid-column: 1 / span 2;
+    width: 100%;
+  }
+  .row {
+    flex-wrap: wrap;
+  }
+}
 </style>
 </head>
-<body><div class="layout"><aside class="sidebar">
-<div class="head"><span class="dot"></span><div><div class="title">Arena Monitor</div><div id="env" class="meta"></div></div></div>
-<div class="row"><span id="room" class="tag"></span><span id="status" class="meta sp">connecting...</span></div>
-<div class="row"><button id="new-room" class="btn ghost">+ 新建</button><button id="del-room" class="btn danger">删除当前</button></div>
-<div class="rooms"><h4>聊天窗口</h4><input id="room-q" class="search" placeholder="模糊查询 room id"><div id="rooms" class="list"></div></div>
-<div class="statgrid"><div class="stat"><div class="k">总消息</div><div id="s-msg" class="v">0</div></div><div class="stat"><div class="k">Agent 连续轮次</div><div id="s-turn" class="v">0</div></div><div class="stat"><div class="k">路由队列</div><div id="s-queue" class="v">0</div></div><div class="stat"><div class="k">最大深度</div><div id="s-depth" class="v">10</div></div></div>
-<div id="route" class="meta"></div>
-<div id="agents"></div></aside><section class="main"><div class="header"><strong>Chat</strong><span class="meta">多 Agent 状态可视化</span></div><div id="messages" class="messages"></div>
-<div class="input"><input id="username" value="镇元子" placeholder="Name"><select id="send-mode"><option value="shift_enter" selected>Shift+Enter 发送</option><option value="enter">Enter 发送</option></select><input id="msg" placeholder="Type a message..."><button id="send" class="btn">Send</button></div>
-</section></div>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="head">
+      <span class="dot"></span>
+      <div>
+        <div class="title">Arena Monitor</div>
+        <div id="env" class="meta"></div>
+      </div>
+    </div>
+    <div class="row"><span id="room" class="tag"></span><span id="status" class="meta sp">connecting...</span></div>
+    <div class="row"><button id="new-room" class="btn ghost">+ 新建</button><button id="del-room" class="btn danger">删除当前</button></div>
+    <div class="rooms"><h4>聊天窗口</h4><input id="room-q" class="search" placeholder="模糊查询 room id"><div id="rooms" class="list"></div></div>
+    <div class="statgrid"><div class="stat"><div class="k">总消息</div><div id="s-msg" class="v">0</div></div><div class="stat"><div class="k">Agent 连续轮次</div><div id="s-turn" class="v">0</div></div><div class="stat"><div class="k">路由队列</div><div id="s-queue" class="v">0</div></div><div class="stat"><div class="k">最大深度</div><div id="s-depth" class="v">10</div></div></div>
+    <div id="route" class="meta"></div>
+    <div id="agents"></div>
+  </aside>
+
+  <section class="main">
+    <div class="header"><strong>Chat</strong><span class="meta">多 Agent 状态可视化</span></div>
+    <div id="messages" class="messages"></div>
+    <div class="input">
+      <input id="username" value="镇元子" placeholder="Name">
+      <select id="send-mode"><option value="shift_enter" selected>Shift+Enter 发送</option><option value="enter">Enter 发送</option></select>
+      <textarea id="msg" rows="1" placeholder="Type a message..."></textarea>
+      <button id="send" class="btn">Send</button>
+    </div>
+  </section>
+</div>
 <script>
-(()=>{const qs=new URLSearchParams(location.search),roomId=(qs.get('roomId')||'default').trim();const ui={env:document.getElementById('env'),room:document.getElementById('room'),status:document.getElementById('status'),sMsg:document.getElementById('s-msg'),sTurn:document.getElementById('s-turn'),sQueue:document.getElementById('s-queue'),sDepth:document.getElementById('s-depth'),route:document.getElementById('route'),agents:document.getElementById('agents'),messages:document.getElementById('messages'),username:document.getElementById('username'),msg:document.getElementById('msg'),send:document.getElementById('send'),rooms:document.getElementById('rooms'),newRoom:document.getElementById('new-room'),delRoom:document.getElementById('del-room'),roomQ:document.getElementById('room-q'),sendMode:document.getElementById('send-mode')};let ws,isComposing=false;const AGENT_COLORS={清风:'#14b8a6',明月:'#3b82f6'};const saved=localStorage.getItem('arena_name');if(saved)ui.username.value=saved;ui.username.onchange=()=>localStorage.setItem('arena_name',ui.username.value||'镇元子');ui.room.textContent='room: '+roomId;
-const fmt=t=>t?new Date(t).toLocaleTimeString():'--',esc=s=>{const d=document.createElement('div');d.textContent=s||'';return d.innerHTML;};
-const AGENT_MODELS={清风:'Claude',明月:'Codex'};
-const avatar=n=>({ch:(n||'?')[0]||'?',c:AGENT_COLORS[n]||'#64748b'});const bubble=m=>{const f=m.from||'';if(f===(ui.username.value||'镇元子'))return'mine';if(f==='清风')return'qingfeng';if(f==='明月')return'mingyue';return'other';};
-const uline=m=>{const model=AGENT_MODELS[m.from]||'';const usage=m.usage||null;if(!model&&!usage)return'';const modelPart=model?`model ${model}`:'';const tokenPart=usage?`tokens in ${usage.inputTokens||0} / out ${usage.outputTokens||0}${usage.cachedInputTokens?` / cached ${usage.cachedInputTokens}`:''}`:'';return`<div class="u">${[modelPart,tokenPart].filter(Boolean).join(' · ')}</div>`;};
-const roomApi=()=>'/api/rooms'+(ui.roomQ.value.trim()?`?q=${encodeURIComponent(ui.roomQ.value.trim())}`:'');
-function renderRooms(rooms){ui.rooms.innerHTML=(rooms||[]).map(r=>`<button class="rbtn ${r.roomId===roomId?'active':''}" data-room="${esc(r.roomId)}">${esc(r.title||r.roomId)}</button>`).join('');ui.rooms.querySelectorAll('.rbtn').forEach(b=>b.onclick=()=>location.href='/?roomId='+encodeURIComponent(b.dataset.room));}
- function renderAgent(a){const u=a.usage||{};return `<div class="agent"><div class="row"><div class="agent-avatar" style="background:${a.color||'#64748b'}">${esc(a.avatar||a.name[0])}</div><div><div class="name">${esc(a.name)}</div><div class="sub">${esc(a.model||'unknown')}</div></div><span class="pill">${esc(a.status||'idle')}</span></div><div class="line">调用: ${u.invokeCount||0} 次 · 平均输入: ${u.avgInputTokens||0} tokens</div><div class="line">消息: ${a.messageCount||0} · 最近活跃: ${fmt(a.lastSeenAt||u.lastInvokeAt)}</div></div>`;}
-async function refresh(){const [envInfo,dashRes,roomsRes]=await Promise.all([fetch('/api/env').then(r=>r.json()),fetch('/api/dashboard?roomId='+encodeURIComponent(roomId)),fetch(roomApi()).then(r=>r.json())]);const dash=await dashRes.json().catch(()=>({}));ui.env.textContent=`${envInfo.environment} / ${envInfo.branch} / ${envInfo.port}`;if(dashRes.ok){ui.sMsg.textContent=String(dash.totalMessages||0);ui.sTurn.textContent=String(dash.agentTurns||0);ui.sQueue.textContent=String(dash.route?.queued||0);ui.sDepth.textContent=String(dash.route?.maxDepth||10);const rt=dash.route||{};const act=rt.activeTask?`${rt.activeTask.target||''} d${rt.activeTask.depth||''}`:'-';const drop=(rt.lastDropped||[])[0];ui.route.textContent=`active: ${act}${drop?` | dropped: ${drop.reason}/${drop.target}/d${drop.depth}`:''}`;ui.agents.innerHTML=(dash.agents||[]).map(renderAgent).join('');}else{ui.agents.innerHTML=`<div class="meta">dashboard error: ${esc(dash.error||dashRes.status)}</div>`;}renderRooms(roomsRes.rooms||[]);}
-function renderMsg(m){if(m.type==='system'){const d=document.createElement('div');d.className='msg system';d.textContent=m.text||m.content||'';ui.messages.appendChild(d);return;}const cls=bubble(m),av=avatar(m.from||''),row=document.createElement('div');row.className='msg-row '+(cls==='mine'?'mine':'');const a=document.createElement('div');a.className='msg-avatar';a.style.background=av.c;a.textContent=av.ch;const b=document.createElement('div');b.className='msg '+cls;b.innerHTML=`<div class="m">${esc(m.from||'unknown')} · ${fmt(m.timestamp)}</div><div style="white-space:pre-wrap">${esc(m.text||m.content||'')}</div>${uline(m)}`;if(cls==='mine'){row.appendChild(b);row.appendChild(a);}else{row.appendChild(a);row.appendChild(b);}ui.messages.appendChild(row);ui.messages.scrollTop=ui.messages.scrollHeight;}
-async function connect(){const proto=location.protocol==='https:'?'wss:':'ws:',t=await fetch('/api/ws-token?roomId='+encodeURIComponent(roomId)).then(r=>r.json());ws=new WebSocket(`${proto}//${location.host}/?token=${encodeURIComponent(t.token||'')}&roomId=${encodeURIComponent(roomId)}`);ws.onopen=()=>{ui.status.textContent='online';refresh().catch(()=>{});};ws.onclose=()=>{ui.status.textContent='reconnecting...';setTimeout(connect,2000);};ws.onmessage=e=>{const d=JSON.parse(e.data);if(d.type==='history'){ui.messages.innerHTML='';(d.messages||[]).forEach(renderMsg);}else renderMsg(d);refresh().catch(()=>{});};}
-async function createRoom(){const raw=prompt('输入新聊天窗口 ID（英文/数字/.-_）');if(!raw)return;const id=raw.trim();if(!id)return;const r=await fetch('/api/rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roomId:id,title:id,createdBy:ui.username.value||'镇元子'})});const d=await r.json();if(!r.ok)return alert('创建失败: '+(d.error||r.status));location.href='/?roomId='+encodeURIComponent(d.roomId);}
-async function deleteRoom(){if(roomId==='default')return alert('default 房间不能删除');if(!confirm(`确认删除房间 ${roomId} 及其 Redis 数据？`))return;const r=await fetch('/api/rooms?roomId='+encodeURIComponent(roomId),{method:'DELETE'});const d=await r.json();if(!r.ok)return alert('删除失败: '+(d.error||r.status));location.href='/?roomId=default';}
-function send(){const text=ui.msg.value.trim();if(!text||!ws||ws.readyState!==1)return;ws.send(JSON.stringify({from:ui.username.value||'镇元子',text,type:'chat',timestamp:Date.now(),roomId}));ui.msg.value='';}
-ui.send.onclick=send;ui.roomQ.oninput=()=>refresh().catch(()=>{});ui.newRoom.onclick=()=>createRoom().catch(()=>{});ui.delRoom.onclick=()=>deleteRoom().catch(()=>{});
-ui.msg.oncompositionstart=()=>{isComposing=true;};ui.msg.oncompositionend=()=>{isComposing=false;};ui.msg.onkeydown=e=>{if(e.key!=='Enter')return;if(isComposing||e.isComposing||e.keyCode===229)return;e.preventDefault();const mode=ui.sendMode.value;if(mode==='enter'&&!e.shiftKey)send();if(mode==='shift_enter'&&e.shiftKey)send();};
-refresh().catch(()=>{});setInterval(()=>refresh().catch(()=>{}),5000);connect().catch(()=>ui.status.textContent='connect failed');})();
-</script></body></html>
+(() => {
+  const qs = new URLSearchParams(location.search);
+  const roomId = (qs.get('roomId') || 'default').trim();
+  const ui = {
+    env: document.getElementById('env'),
+    room: document.getElementById('room'),
+    status: document.getElementById('status'),
+    sMsg: document.getElementById('s-msg'),
+    sTurn: document.getElementById('s-turn'),
+    sQueue: document.getElementById('s-queue'),
+    sDepth: document.getElementById('s-depth'),
+    route: document.getElementById('route'),
+    agents: document.getElementById('agents'),
+    messages: document.getElementById('messages'),
+    username: document.getElementById('username'),
+    msg: document.getElementById('msg'),
+    send: document.getElementById('send'),
+    rooms: document.getElementById('rooms'),
+    newRoom: document.getElementById('new-room'),
+    delRoom: document.getElementById('del-room'),
+    roomQ: document.getElementById('room-q'),
+    sendMode: document.getElementById('send-mode'),
+  };
+
+  let ws;
+  let isComposing = false;
+  const AGENT_COLORS = { 清风: '#14b8a6', 明月: '#3b82f6' };
+  const AGENT_MODELS = { 清风: 'Claude', 明月: 'Codex' };
+
+  const saved = localStorage.getItem('arena_name');
+  if (saved) ui.username.value = saved;
+  ui.username.onchange = () => localStorage.setItem('arena_name', ui.username.value || '镇元子');
+  ui.room.textContent = `room: ${roomId}`;
+
+  const fmt = (t) => (t ? new Date(t).toLocaleTimeString() : '--');
+  const esc = (s) => {
+    const d = document.createElement('div');
+    d.textContent = s || '';
+    return d.innerHTML;
+  };
+  const avatar = (n) => ({ ch: (n || '?')[0] || '?', c: AGENT_COLORS[n] || '#64748b' });
+
+  const bubble = (m) => {
+    const from = m.from || '';
+    if (from === (ui.username.value || '镇元子')) return 'mine';
+    if (from === '清风') return 'qingfeng';
+    if (from === '明月') return 'mingyue';
+    return 'other';
+  };
+
+  const uline = (m) => {
+    const model = AGENT_MODELS[m.from] || '';
+    const usage = m.usage || null;
+    if (!model && !usage) return '';
+    const modelPart = model ? `model ${model}` : '';
+    const tokenPart = usage
+      ? `tokens in ${usage.inputTokens || 0} / out ${usage.outputTokens || 0}${usage.cachedInputTokens ? ` / cached ${usage.cachedInputTokens}` : ''}`
+      : '';
+    return `<div class="u">${[modelPart, tokenPart].filter(Boolean).join(' · ')}</div>`;
+  };
+
+  const roomApi = () => '/api/rooms' + (ui.roomQ.value.trim() ? `?q=${encodeURIComponent(ui.roomQ.value.trim())}` : '');
+
+  function isNearBottom() {
+    const gap = ui.messages.scrollHeight - ui.messages.scrollTop - ui.messages.clientHeight;
+    return gap < 72;
+  }
+
+  function scrollToBottom() {
+    ui.messages.scrollTop = ui.messages.scrollHeight;
+  }
+
+  function renderRooms(rooms) {
+    ui.rooms.innerHTML = (rooms || [])
+      .map((r) => `<button class="rbtn ${r.roomId === roomId ? 'active' : ''}" data-room="${esc(r.roomId)}">${esc(r.title || r.roomId)}</button>`)
+      .join('');
+    ui.rooms.querySelectorAll('.rbtn').forEach((b) => {
+      b.onclick = () => {
+        location.href = '/?roomId=' + encodeURIComponent(b.dataset.room);
+      };
+    });
+  }
+
+  function renderAgent(a) {
+    const usage = a.usage || {};
+    return `<div class="agent"><div class="row"><div class="agent-avatar" style="background:${a.color || '#64748b'}">${esc(a.avatar || a.name[0])}</div><div><div class="name">${esc(a.name)}</div><div class="sub">${esc(a.model || 'unknown')}</div></div><span class="pill">${esc(a.status || 'idle')}</span></div><div class="line">调用: ${usage.invokeCount || 0} 次 · 平均输入: ${usage.avgInputTokens || 0} tokens</div><div class="line">消息: ${a.messageCount || 0} · 最近活跃: ${fmt(a.lastSeenAt || usage.lastInvokeAt)}</div></div>`;
+  }
+
+  async function refresh() {
+    const [envInfo, dashRes, roomsRes] = await Promise.all([
+      fetch('/api/env').then((r) => r.json()),
+      fetch('/api/dashboard?roomId=' + encodeURIComponent(roomId)),
+      fetch(roomApi()).then((r) => r.json()),
+    ]);
+    const dash = await dashRes.json().catch(() => ({}));
+    const external = envInfo.publicBaseUrl && envInfo.publicBaseUrl !== `http://localhost:${envInfo.port}`;
+    ui.env.textContent = `${envInfo.environment} / ${envInfo.branch} / ${envInfo.port}${external ? ` / ${envInfo.publicBaseUrl}` : ''}`;
+
+    if (dashRes.ok) {
+      ui.sMsg.textContent = String(dash.totalMessages || 0);
+      ui.sTurn.textContent = String(dash.agentTurns || 0);
+      ui.sQueue.textContent = String(dash.route?.queued || 0);
+      ui.sDepth.textContent = String(dash.route?.maxDepth || 10);
+      const route = dash.route || {};
+      const active = route.activeTask ? `${route.activeTask.target || ''} d${route.activeTask.depth || ''}` : '-';
+      const dropped = (route.lastDropped || [])[0];
+      ui.route.textContent = `active: ${active}${dropped ? ` | dropped: ${dropped.reason}/${dropped.target}/d${dropped.depth}` : ''}`;
+      ui.agents.innerHTML = (dash.agents || []).map(renderAgent).join('');
+    } else {
+      ui.agents.innerHTML = `<div class="meta">dashboard error: ${esc(dash.error || dashRes.status)}</div>`;
+    }
+
+    renderRooms(roomsRes.rooms || []);
+  }
+
+  function renderMsg(m, options = {}) {
+    const shouldStickBottom = options.forceScroll || isNearBottom();
+
+    if (m.type === 'system') {
+      const div = document.createElement('div');
+      div.className = 'msg system';
+      div.textContent = m.text || m.content || '';
+      ui.messages.appendChild(div);
+      if (shouldStickBottom) scrollToBottom();
+      return;
+    }
+
+    const cls = bubble(m);
+    const av = avatar(m.from || '');
+    const row = document.createElement('div');
+    row.className = 'msg-row ' + (cls === 'mine' ? 'mine' : '');
+
+    const a = document.createElement('div');
+    a.className = 'msg-avatar';
+    a.style.background = av.c;
+    a.textContent = av.ch;
+
+    const b = document.createElement('div');
+    b.className = 'msg ' + cls;
+    b.innerHTML = `<div class="m">${esc(m.from || 'unknown')} · ${fmt(m.timestamp)}</div><div style="white-space:pre-wrap">${esc(m.text || m.content || '')}</div>${uline(m)}`;
+
+    if (cls === 'mine') {
+      row.appendChild(b);
+      row.appendChild(a);
+    } else {
+      row.appendChild(a);
+      row.appendChild(b);
+    }
+    ui.messages.appendChild(row);
+
+    if (shouldStickBottom) scrollToBottom();
+  }
+
+  function adjustComposerHeight() {
+    ui.msg.style.height = 'auto';
+    ui.msg.style.height = `${Math.min(ui.msg.scrollHeight, 140)}px`;
+  }
+
+  async function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const t = await fetch('/api/ws-token?roomId=' + encodeURIComponent(roomId)).then((r) => r.json());
+    ws = new WebSocket(`${proto}//${location.host}/?token=${encodeURIComponent(t.token || '')}&roomId=${encodeURIComponent(roomId)}`);
+
+    ws.onopen = () => {
+      ui.status.textContent = 'online';
+      refresh().catch(() => {});
+    };
+
+    ws.onclose = () => {
+      ui.status.textContent = 'reconnecting...';
+      setTimeout(connect, 2000);
+    };
+
+    ws.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+      if (d.type === 'history') {
+        ui.messages.innerHTML = '';
+        (d.messages || []).forEach((m) => renderMsg(m));
+        scrollToBottom();
+      } else {
+        renderMsg(d);
+      }
+      refresh().catch(() => {});
+    };
+  }
+
+  async function createRoom() {
+    const raw = prompt('输入新聊天窗口 ID（英文/数字/.-_）');
+    if (!raw) return;
+    const id = raw.trim();
+    if (!id) return;
+    const r = await fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomId: id, title: id, createdBy: ui.username.value || '镇元子' }),
+    });
+    const d = await r.json();
+    if (!r.ok) return alert('创建失败: ' + (d.error || r.status));
+    location.href = '/?roomId=' + encodeURIComponent(d.roomId);
+  }
+
+  async function deleteRoom() {
+    if (roomId === 'default') return alert('default 房间不能删除');
+    if (!confirm(`确认删除房间 ${roomId} 及其 Redis 数据？`)) return;
+    const r = await fetch('/api/rooms?roomId=' + encodeURIComponent(roomId), { method: 'DELETE' });
+    const d = await r.json();
+    if (!r.ok) return alert('删除失败: ' + (d.error || r.status));
+    location.href = '/?roomId=default';
+  }
+
+  function send() {
+    const text = ui.msg.value.trim();
+    if (!text || !ws || ws.readyState !== 1) return;
+    ws.send(JSON.stringify({ from: ui.username.value || '镇元子', text, type: 'chat', timestamp: Date.now(), roomId }));
+    ui.msg.value = '';
+    adjustComposerHeight();
+    scrollToBottom();
+    ui.msg.focus();
+  }
+
+  ui.send.onclick = send;
+  ui.roomQ.oninput = () => refresh().catch(() => {});
+  ui.newRoom.onclick = () => createRoom().catch(() => {});
+  ui.delRoom.onclick = () => deleteRoom().catch(() => {});
+
+  ui.msg.oninput = adjustComposerHeight;
+  ui.msg.onfocus = () => {
+    setTimeout(() => {
+      ui.msg.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      scrollToBottom();
+    }, 120);
+  };
+
+  ui.msg.oncompositionstart = () => { isComposing = true; };
+  ui.msg.oncompositionend = () => { isComposing = false; };
+  ui.msg.onkeydown = (e) => {
+    if (e.key !== 'Enter') return;
+    if (isComposing || e.isComposing || e.keyCode === 229) return;
+    const mode = ui.sendMode.value;
+    if (mode === 'enter' && !e.shiftKey) {
+      e.preventDefault();
+      send();
+      return;
+    }
+    if (mode === 'shift_enter' && e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  };
+
+  if (window.visualViewport) {
+    const onVv = () => {
+      document.body.style.minHeight = `${window.visualViewport.height}px`;
+    };
+    window.visualViewport.addEventListener('resize', onVv);
+    onVv();
+  }
+
+  adjustComposerHeight();
+  refresh().catch(() => {});
+  setInterval(() => refresh().catch(() => {}), 5000);
+  connect().catch(() => { ui.status.textContent = 'connect failed'; });
+})();
+</script>
+</body>
+</html>

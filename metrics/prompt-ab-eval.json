@@ -1,0 +1,62 @@
+{
+  "scenarios": [
+    {
+      "scenario": "coding-fix",
+      "agent": "清风",
+      "legacyChars": 1208,
+      "optimizedChars": 815,
+      "deltaChars": -393,
+      "deltaPct": -32.53,
+      "checks": {
+        "hasSafety": true,
+        "hasToolAction": true,
+        "hasOutputShape": true
+      }
+    },
+    {
+      "scenario": "review-risk",
+      "agent": "明月",
+      "legacyChars": 1139,
+      "optimizedChars": 745,
+      "deltaChars": -394,
+      "deltaPct": -34.59,
+      "checks": {
+        "hasSafety": true,
+        "hasToolAction": true,
+        "hasOutputShape": true
+      }
+    },
+    {
+      "scenario": "planning",
+      "agent": "明月",
+      "legacyChars": 817,
+      "optimizedChars": 619,
+      "deltaChars": -198,
+      "deltaPct": -24.24,
+      "checks": {
+        "hasSafety": true,
+        "hasToolAction": true,
+        "hasOutputShape": true
+      }
+    },
+    {
+      "scenario": "small-talk",
+      "agent": "清风",
+      "legacyChars": 803,
+      "optimizedChars": 545,
+      "deltaChars": -258,
+      "deltaPct": -32.13,
+      "checks": {
+        "hasSafety": true,
+        "hasToolAction": true,
+        "hasOutputShape": true
+      }
+    }
+  ],
+  "average": {
+    "legacyChars": 992,
+    "optimizedChars": 681,
+    "deltaChars": -311,
+    "deltaPct": -31.35
+  }
+}

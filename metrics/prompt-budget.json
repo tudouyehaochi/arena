@@ -1,0 +1,20 @@
+{
+  "baseline": {
+    "source": "agent-metrics.log snapshot 2026-03-01",
+    "overall": {
+      "samples": 77,
+      "p50": 932,
+      "p90": 1707,
+      "avg": 1077,
+      "max": 2334
+    }
+  },
+  "target": {
+    "overall": {
+      "p50": 840,
+      "p90": 1536
+    },
+    "minReductionPct": 10
+  },
+  "regressionThresholdPct": 10
+}

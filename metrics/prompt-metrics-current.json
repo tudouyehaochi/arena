@@ -1,0 +1,56 @@
+{
+  "logPath": "/Users/mohanma/arena/agent-metrics.log",
+  "overall": {
+    "samples": 77,
+    "p50": 932,
+    "p90": 1707,
+    "avg": 1077,
+    "max": 2334
+  },
+  "byRoom": {
+    "unknown": {
+      "samples": 30,
+      "p50": 732,
+      "p90": 1713,
+      "avg": 1036,
+      "max": 2334
+    },
+    "default": {
+      "samples": 30,
+      "p50": 1041,
+      "p90": 1720,
+      "avg": 1141,
+      "max": 2230
+    },
+    "new_day": {
+      "samples": 7,
+      "p50": 822,
+      "p90": 945,
+      "avg": 846,
+      "max": 1117
+    },
+    "new_days": {
+      "samples": 3,
+      "p50": 875,
+      "p90": 953,
+      "avg": 900,
+      "max": 972
+    },
+    "review_code": {
+      "samples": 7,
+      "p50": 1284,
+      "p90": 1696,
+      "avg": 1284,
+      "max": 1835
+    }
+  },
+  "byRouteSourceType": {
+    "unknown": {
+      "samples": 77,
+      "p50": 932,
+      "p90": 1707,
+      "avg": 1077,
+      "max": 2334
+    }
+  }
+}

@@ -61,6 +61,76 @@ http://localhost:3000/?roomId=default
 http://localhost:3000/?roomId=feature-a
 ```
 
+## Mobile + External Access
+
+Default startup is local-only for safety:
+
+```bash
+# defaults
+ARENA_BIND_HOST=127.0.0.1
+ARENA_PUBLIC_BASE_URL=http://localhost:3000
+```
+
+To allow phone access from external devices (LAN/reverse proxy), set:
+
+```bash
+ARENA_BIND_HOST=0.0.0.0
+ARENA_PUBLIC_BASE_URL=http://<your-lan-ip-or-domain>:3000
+```
+
+Then open on phone:
+
+```text
+http://<your-lan-ip-or-domain>:3000/?roomId=default
+```
+
+Mobile support baseline:
+- iOS Safari (current major)
+- Android Chrome (current major)
+
+Security checklist before external exposure:
+- Set a strong `ARENA_ADMIN_KEY` and avoid sharing admin URL with query key in public channels.
+- Restrict network exposure scope (firewall / security group / reverse proxy allowlist).
+- Prefer HTTPS + WSS termination at reverse proxy for internet-facing access.
+- Keep callback/auth tokens server-side only; do not embed in client pages.
+- Review externally reachable endpoints (`/admin`, `/api/*`) before broad exposure.
+
+## Prompt Optimization (Qingfeng / Mingyue)
+
+Prompt mode is configurable with rollback support:
+
+```bash
+# default: optimized
+ARENA_PROMPT_MODE=optimized
+
+# rollback
+ARENA_PROMPT_MODE=legacy
+```
+
+Token budget baseline/targets are tracked in:
+- `metrics/prompt-budget.json`
+
+Generate prompt metrics report (overall + by room + by route source type):
+
+```bash
+npm run prompt:metrics > metrics/prompt-metrics-current.json
+```
+
+Run synthetic A/B evaluation (legacy vs optimized prompt composition):
+
+```bash
+npm run prompt:ab > metrics/prompt-ab-eval.json
+```
+
+Run regression check (fails if p90 grows beyond threshold):
+
+```bash
+node scripts/prompt-regression-check.js \
+  metrics/prompt-metrics-current.json \
+  metrics/prompt-metrics-baseline.json \
+  10
+```
+
 Start resident with explicit room binding for runner callbacks:
 
 ```bash
