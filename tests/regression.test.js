@@ -7,8 +7,9 @@ const { Readable } = require('node:stream');
 const auth = require('../lib/auth');
 const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
-const { handleGetAdminStatus, handlePostAdminLogin } = require('../lib/admin-handlers');
+const { handleGetAdmin, handleGetAdminStatus, handlePostAdminLogin } = require('../lib/admin-handlers');
 const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
+const { handleGetDashboard } = require('../lib/dashboard-handlers');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
 store._setLogFile(null);
@@ -193,6 +194,28 @@ describe('route-handlers auth regression', () => {
     await handleGetAdminStatus(req, res);
     assert.equal(res.status, 401);
     process.env.ARENA_ADMIN_KEY = prev;
+  });
+
+  it('GET /admin returns login page without auth', async () => {
+    const req = { url: '/admin', headers: {} };
+    const res = await new Promise((resolve) => {
+      const r = makeRes();
+      const origEnd = r.end.bind(r);
+      r.end = (data) => { origEnd(data); resolve(r); };
+      handleGetAdmin(req, r);
+    });
+    assert.equal(res.status, 200);
+    assert.match(String(res.body || ''), /Admin Login/);
+  });
+
+  it('GET /api/dashboard works without bearer auth', async () => {
+    const req = { url: '/api/dashboard?roomId=default', headers: {} };
+    const res = makeRes();
+    await handleGetDashboard(req, res);
+    assert.equal(res.status, 200);
+    const data = JSON.parse(res.body);
+    assert.equal(data.roomId, 'default');
+    assert.ok(Array.isArray(data.agents));
   });
 
   it('POST /api/admin/login accepts default credentials', async () => {
