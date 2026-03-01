@@ -9,3 +9,4 @@ redis/*.rdb
 redis/*.aof
 redis/appendonlydir-*/
 redis/*.log
+redis/.redis-*-runtime.conf
