@@ -8,7 +8,7 @@ const auth = require('../lib/auth');
 const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
 const { handleGetAdmin, handleGetAdminStatus, handlePostAdminLogin } = require('../lib/admin-handlers');
-const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
+const { handleGetRooms, handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
 const { handleGetDashboard } = require('../lib/dashboard-handlers');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
@@ -48,7 +48,7 @@ function authHeaders() {
 function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
   return new Promise((resolve) => {
     const req = Readable.from([JSON.stringify(payload)]);
-    req.headers = authHeaders();
+    req.headers = {};
     const res = makeRes();
     const origEnd = res.end.bind(res);
     res.end = (data) => { origEnd(data); resolve(res); };
@@ -57,7 +57,7 @@ function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
 }
 function invokeDeleteRoom(roomId) {
   return new Promise((resolve) => {
-    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: authHeaders() };
+    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: {} };
     const res = makeRes();
     const origEnd = res.end.bind(res);
     res.end = (data) => { origEnd(data); resolve(res); };
@@ -216,6 +216,23 @@ describe('route-handlers auth regression', () => {
     const data = JSON.parse(res.body);
     assert.equal(data.roomId, 'default');
     assert.ok(Array.isArray(data.agents));
+  });
+
+  it('POST /api/rooms works without bearer auth', async () => {
+    const roomId = `guest_create_${Date.now()}`;
+    const created = await invokeCreateRoom({ roomId, title: roomId, createdBy: 'tester' });
+    assert.equal(created.status, 200);
+    const deleted = await invokeDeleteRoom(roomId);
+    assert.equal(deleted.status, 200);
+  });
+
+  it('GET /api/rooms works without bearer auth', async () => {
+    const req = { url: '/api/rooms', headers: {} };
+    const res = makeRes();
+    await handleGetRooms(req, res);
+    assert.equal(res.status, 200);
+    const data = JSON.parse(res.body);
+    assert.ok(Array.isArray(data.rooms));
   });
 
   it('POST /api/admin/login accepts default credentials', async () => {
