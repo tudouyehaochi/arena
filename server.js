@@ -11,6 +11,7 @@ const store = require('./lib/message-store');
 const redis = require('./lib/redis-client');
 const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } = require('./lib/route-handlers');
 const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-context-handlers');
+const { handleGetDashboard } = require('./lib/dashboard-handlers');
 
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
@@ -54,6 +55,7 @@ const routes = {
   'GET /api/agent-status': handleGetAgentStatus,
   'GET /api/ws-token': handleGetWsToken,
   'GET /api/agent-context': handleGetAgentContext,
+  'GET /api/dashboard': handleGetDashboard,
 };
 
 function safeAsync(handler) {
