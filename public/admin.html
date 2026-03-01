@@ -25,13 +25,15 @@
 <script>
 (()=>{
   const $=(id)=>document.getElementById(id);
+  const adminKey=new URLSearchParams(location.search).get('adminKey')||'';
+  const authHeaders=adminKey?{'x-admin-key':adminKey}:{};
   function esc(s){const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;}
   function fmtBytes(n){const v=Number(n||0);if(v<1024)return v+' B';if(v<1024*1024)return (v/1024).toFixed(1)+' KB';if(v<1024*1024*1024)return (v/1024/1024).toFixed(1)+' MB';return (v/1024/1024/1024).toFixed(2)+' GB';}
   function levelClass(l){if(l==='CRITICAL')return'bad';if(l==='WARN')return'warn';return'ok';}
   async function load(){
-    const res=await fetch('/api/admin/status');
+    const res=await fetch('/api/admin/status',{headers:authHeaders});
     const data=await res.json();
-    if(!res.ok){alert('加载失败: '+(data.error||res.status));return;}
+    if(!res.ok){$('runtime').innerHTML='';$('integrity').innerHTML='';$('alerts').innerHTML='';$('backups').innerHTML='';alert('加载失败: '+(data.error||res.status));return;}
     $('stamp').textContent='更新时间: '+new Date().toLocaleString();
     const r=data.runtime||{};
     $('runtime').innerHTML=[
@@ -45,11 +47,11 @@
       `<div>最近检查: ${esc(integ.checkedAt||'')}</div>`;
     }
     $('alerts').innerHTML=(data.alerts||[]).map(a=>`<tr><td>${esc(a.ts)}</td><td class="${levelClass(a.level)}">${esc(a.level)}</td><td>${esc(a.event)}</td><td>${esc(JSON.stringify(a.detail||{}))}</td><td>${a.acked?'已确认':`<button class="btn" data-ack="${esc(a.id)}">确认</button>`}</td></tr>`).join('');
-    document.querySelectorAll('[data-ack]').forEach((b)=>b.onclick=async()=>{await fetch('/api/admin/alerts/ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.ack})});load();});
+    document.querySelectorAll('[data-ack]').forEach((b)=>b.onclick=async()=>{const r=await fetch('/api/admin/alerts/ack',{method:'POST',headers:{...authHeaders,'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.ack})});const d=await r.json().catch(()=>({}));if(!r.ok){alert('确认失败: '+(d.error||r.status));return;}load();});
     $('backups').innerHTML=(data.backups||[]).map(b=>`<tr><td>${esc(b.name)}</td><td>${esc(fmtBytes(b.size))}</td><td>${esc(b.mtime)}</td></tr>`).join('');
   }
   $('refresh').onclick=()=>load().catch((e)=>alert(e.message));
-  $('check').onclick=async()=>{const r=await fetch('/api/admin/check',{method:'POST'});const d=await r.json();if(!r.ok)alert('校验失败: '+(d.error||r.status));await load();};
+  $('check').onclick=async()=>{const r=await fetch('/api/admin/check',{method:'POST',headers:authHeaders});const d=await r.json().catch(()=>({}));if(!r.ok){alert('校验失败: '+(d.error||r.status));return;}await load();};
   load().catch((e)=>alert(e.message));
 })();
 </script>

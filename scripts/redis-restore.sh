@@ -28,10 +28,8 @@ fi
 
 if [[ "$ENV_NAME" == "prod" ]]; then
   REDIS_URL="${ARENA_REDIS_URL_PROD:-redis://127.0.0.1:6380}"
-  SERVICE_NAME="redis@prod"
 else
   REDIS_URL="${ARENA_REDIS_URL_DEV:-redis://127.0.0.1:6379}"
-  SERVICE_NAME="redis"
 fi
 
 if ! command -v redis-cli >/dev/null 2>&1; then
@@ -55,12 +53,11 @@ cp "${TMP_DIR}/dump.rdb" "${REDIS_DIR}/${DB_FILE}"
 rm -rf "$TMP_DIR"
 
 if [[ "$RESTART" == "1" ]]; then
-  if command -v brew >/dev/null 2>&1; then
-    brew services start "$SERVICE_NAME" || true
-  fi
+  echo "managed mode: restart arena resident stack instead of brew service"
+  echo "example: npm run start:branch -- --branch $(git rev-parse --abbrev-ref HEAD) --env ${ENV_NAME} --port $([[ \"$ENV_NAME\" == \"prod\" ]] && echo 3001 || echo 3000)"
 fi
 
 echo "restore_staged env=${ENV_NAME} file=${BACKUP_FILE} target=${REDIS_DIR}/${DB_FILE}"
 if [[ "$RESTART" != "1" ]]; then
-  echo "Please start redis manually, then run integrity check: POST /api/admin/check"
+  echo "Please restart arena resident stack, then run integrity check: POST /api/admin/check"
 fi

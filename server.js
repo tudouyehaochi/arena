@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { WebSocketServer } = require('ws');
 const { getEnv, currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
@@ -22,6 +23,8 @@ const PORT = resolvePort({ port: process.env.PORT, environment: RUNTIME_ENV, bra
 const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || `${RUNTIME_ENV}:${BRANCH}:${PORT}`;
 const DEFAULT_ROOM = process.env.ARENA_ROOM_ID || DEFAULT_ROOM_ID;
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
+const ADMIN_KEY = String(process.env.ARENA_ADMIN_KEY || crypto.randomUUID()).trim();
+process.env.ARENA_ADMIN_KEY = ADMIN_KEY;
 redis.startConnect();
 function handleGetIndex(_req, res) {
   fs.readFile(INDEX_HTML, (err, data) => {
@@ -132,6 +135,7 @@ wss.on('connection', async (ws, req) => {
 let heartbeatTimer = null;
 async function start() {
   await redis.waitUntilReady(5000);
+  await store.ensureRoom(DEFAULT_ROOM, { title: DEFAULT_ROOM, createdBy: 'system', boundInstanceId: INSTANCE_ID });
   const check = await runIntegrityCheck({ instanceId: INSTANCE_ID, runtimeEnv: RUNTIME_ENV, port: PORT });
   await redis.getClient().set(LAST_CHECK_KEY, JSON.stringify(check));
   if (!check.ok) {
@@ -141,7 +145,6 @@ async function start() {
   if (check.issues.length > 0) {
     await alerts.pushAlert('WARN', 'startup_integrity_warning', { issueCount: check.issues.length });
   }
-  await store.ensureRoom(DEFAULT_ROOM, { title: DEFAULT_ROOM, createdBy: 'system', boundInstanceId: INSTANCE_ID });
   await store.loadFromLog(DEFAULT_ROOM);
   await runtimeRegistry.registerInstance({
     instanceId: INSTANCE_ID,
@@ -169,6 +172,7 @@ async function start() {
     console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
     console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);
     console.log(`Auth header: Authorization: Bearer ${creds.invocationId}:${creds.callbackToken}:${creds.jti}`);
+    console.log(`Admin URL: http://localhost:${PORT}/admin?adminKey=${ADMIN_KEY}`);
     console.log('--------------------------------------------------\n');
   });
 }

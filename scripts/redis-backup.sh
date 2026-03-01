@@ -56,9 +56,9 @@ tar -C "$TMP_DIR" -czf "$OUT_TAR" dump.rdb manifest.json info-server.txt info-me
 rm -rf "$TMP_DIR"
 
 if [[ "$KIND" == "hourly" ]]; then
-  ls -1t "$BASE_DIR"/hourly-*.tar.gz 2>/dev/null | tail -n +49 | xargs -r rm -f
+  ls -1t "$BASE_DIR"/hourly-*.tar.gz 2>/dev/null | tail -n +49 | xargs rm -f 2>/dev/null || true
 else
-  ls -1t "$BASE_DIR"/daily-*.tar.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
+  ls -1t "$BASE_DIR"/daily-*.tar.gz 2>/dev/null | tail -n +15 | xargs rm -f 2>/dev/null || true
 fi
 
 echo "backup_ok env=${ENV_NAME} kind=${KIND} file=${OUT_TAR}"

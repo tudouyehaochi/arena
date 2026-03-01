@@ -7,6 +7,7 @@ const { Readable } = require('node:stream');
 const auth = require('../lib/auth');
 const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
+const { handleGetAdminStatus } = require('../lib/admin-handlers');
 const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
@@ -182,6 +183,16 @@ describe('route-handlers auth regression', () => {
     assert.equal(JSON.parse(res.body).error, 'room_not_found');
     const rooms = await store.listRooms();
     assert.ok(!rooms.some((r) => r.roomId === roomId));
+  });
+
+  it('GET /api/admin/status rejects unauthenticated request', async () => {
+    const prev = process.env.ARENA_ADMIN_KEY;
+    process.env.ARENA_ADMIN_KEY = 'admin-test-key';
+    const req = { url: '/api/admin/status', headers: {} };
+    const res = makeRes();
+    await handleGetAdminStatus(req, res);
+    assert.equal(res.status, 401);
+    process.env.ARENA_ADMIN_KEY = prev;
   });
 });
 
