@@ -7,7 +7,11 @@
     "test": "ARENA_USE_MEMORY_REDIS=1 node --test tests/*.test.js",
     "start:resident": "node start-resident.js",
     "worktree:setup": "bash scripts/setup-worktrees.sh",
-    "start:branch": "bash scripts/start-branch-resident.sh"
+    "start:branch": "bash scripts/start-branch-resident.sh",
+    "backup:dev": "bash scripts/redis-backup.sh --env dev --kind hourly",
+    "backup:prod": "bash scripts/redis-backup.sh --env prod --kind hourly",
+    "backup:daily:dev": "bash scripts/redis-backup.sh --env dev --kind daily",
+    "backup:daily:prod": "bash scripts/redis-backup.sh --env prod --kind daily"
   },
   "repository": {
     "type": "git",

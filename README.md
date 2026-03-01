@@ -66,3 +66,55 @@ Start resident with explicit room binding for runner callbacks:
 ```bash
 npm run start:resident -- --env dev --port 3000 --room-id default
 ```
+
+## Backup & Restore (local only)
+
+Backup artifacts are stored under `backups/dev` and `backups/prod`.
+
+```bash
+# hourly backup
+npm run backup:dev
+npm run backup:prod
+
+# daily backup
+npm run backup:daily:dev
+npm run backup:daily:prod
+```
+
+Retention policy in script:
+- hourly: keep latest 48
+- daily: keep latest 14
+
+Restore from a backup package:
+
+```bash
+bash scripts/redis-restore.sh --env dev --backup backups/dev/hourly-YYYYMMDD-HHMMSS.tar.gz --force
+```
+
+Optional restart attempt:
+
+```bash
+bash scripts/redis-restore.sh --env prod --backup backups/prod/daily-YYYYMMDD-HHMMSS.tar.gz --force --restart
+```
+
+## Startup Integrity Check
+
+At startup, server runs Redis integrity validation before serving traffic.
+
+Critical anomalies (e.g. broken room index, missing default room, invalid message JSON) will block startup.
+Warnings are recorded as alerts.
+
+## Admin Console
+
+Open:
+
+```text
+http://localhost:3000/admin
+http://localhost:3001/admin
+```
+
+Features:
+- runtime status (redis readiness/version/clients/memory)
+- integrity check summary and manual trigger
+- alert list and alert ack
+- local backup file list
