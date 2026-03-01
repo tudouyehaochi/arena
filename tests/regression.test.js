@@ -9,6 +9,7 @@ const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../l
 const store = require('../lib/message-store');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
+store._setLogFile(null);
 
 function makeRes() {
   return {

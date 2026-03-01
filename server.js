@@ -13,6 +13,7 @@ const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } =
 const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-context-handlers');
 const { handleGetDashboard } = require('./lib/dashboard-handlers');
 const { handleGetRooms, handlePostRooms } = require('./lib/room-handlers');
+const { handlePostUsage } = require('./lib/usage-handlers');
 
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
@@ -83,6 +84,7 @@ const server = http.createServer((req, res) => {
   }
   if (method === 'POST' && urlPath === '/api/agent-context') { safeAsync(handlePostAgentContext)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/rooms') { safeAsync(handlePostRooms)(req, res, INSTANCE_ID); return; }
+  if (method === 'POST' && urlPath === '/api/internal/usage') { safeAsync(handlePostUsage)(req, res); return; }
   if (method === 'GET' && (urlPath === '/api/agent-snapshot' || urlPath === '/api/callbacks/thread-context')) {
     safeAsync(handleGetSnapshot)(req, res, PORT); return;
   }
