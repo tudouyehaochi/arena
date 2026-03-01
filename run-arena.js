@@ -8,7 +8,7 @@ const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
 const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
-const { DEFAULT_ROOM_ID, resolveRoomId } = require('./lib/room');
+const { DEFAULT_ROOM_ID, AGENT_NAMES, resolveRoomId } = require('./lib/room');
 const redis = require('./lib/redis-client');
 
 const BRANCH = currentBranch();
@@ -27,7 +27,7 @@ const STATE_PATH = path.join(__dirname, `runner-state.${ROOM_ID}.json`);
 const SUMMARY_PATH = path.join(__dirname, `session-summary.${ROOM_ID}.json`);
 const MCP_SCRIPT = path.join(__dirname, 'agent-arena-mcp.js');
 const AUTH_HEADER = `Bearer ${INVOCATION_ID}:${CALLBACK_TOKEN}`;
-const AGENTS = new Set(['清风', '明月']);
+const AGENTS = new Set(AGENT_NAMES);
 if (!INVOCATION_ID || !CALLBACK_TOKEN) process.exit(1);
 
 function httpGet(urlStr) {

@@ -39,10 +39,14 @@ function invokePost(payload, authHeader, runtime) {
     handlePostMessage(req, res, () => {}, runtime);
   });
 }
+function authHeaders() {
+  const creds = auth.getCredentials();
+  return { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` };
+}
 function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
   return new Promise((resolve) => {
     const req = Readable.from([JSON.stringify(payload)]);
-    req.headers = {};
+    req.headers = authHeaders();
     const res = makeRes();
     const origEnd = res.end.bind(res);
     res.end = (data) => { origEnd(data); resolve(res); };
@@ -51,7 +55,7 @@ function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
 }
 function invokeDeleteRoom(roomId) {
   return new Promise((resolve) => {
-    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: {} };
+    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: authHeaders() };
     const res = makeRes();
     const origEnd = res.end.bind(res);
     res.end = (data) => { origEnd(data); resolve(res); };

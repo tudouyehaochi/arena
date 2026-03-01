@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { Readable } = require('node:stream');
 
+const auth = require('../lib/auth');
 const store = require('../lib/message-store');
 const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
 
@@ -22,17 +23,22 @@ function makeRes(done) {
   };
 }
 
+function authHeaders() {
+  const creds = auth.getCredentials();
+  return { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` };
+}
+
 function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
   return new Promise((resolve) => {
     const req = Readable.from([JSON.stringify(payload)]);
-    req.headers = {};
+    req.headers = authHeaders();
     handlePostRooms(req, makeRes(resolve), instanceId);
   });
 }
 
 function invokeDeleteRoom(roomId) {
   return new Promise((resolve) => {
-    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: {} };
+    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: authHeaders() };
     handleDeleteRoom(req, makeRes(resolve));
   });
 }

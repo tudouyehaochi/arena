@@ -99,7 +99,7 @@ function broadcast(msg, roomId) {
   for (const client of wss.clients) {
     if (client.readyState !== 1) continue;
     if ((client.roomId || DEFAULT_ROOM) !== roomId) continue;
-    client.send(data);
+    try { client.send(data); } catch {}
   }
 }
 

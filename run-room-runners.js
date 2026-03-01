@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const http = require('http');
+const { AGENT_NAMES: VALID_AGENTS } = require('./lib/room');
 
 const API_URL = process.env.ARENA_API_URL || 'http://localhost:3000';
 const INVOCATION_ID = process.env.ARENA_INVOCATION_ID;
@@ -51,7 +52,7 @@ function parseUsageLine(line) {
   const m = line.match(/^\[(.+?) \((Codex|Claude)\)\]\s+(\{.*\})$/);
   if (!m) return null;
   const agent = m[1];
-  if (!['清风', '明月'].includes(agent)) return null;
+  if (!VALID_AGENTS.includes(agent)) return null;
   try {
     const obj = JSON.parse(m[3]);
     if (obj.type !== 'turn.completed' || !obj.usage) return null;
@@ -160,4 +161,4 @@ setInterval(() => {
       console.log('[room-runners] sync warning:', e.message);
     }
   });
-}, ROOM_SYNC_MS).unref();
+}, ROOM_SYNC_MS);
