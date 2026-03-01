@@ -107,6 +107,10 @@ wss.on('connection', async (ws, req) => {
   let roomId;
   try { roomId = roomFromReq(req); }
   catch { ws.close(1008, 'invalid_room'); return; }
+  if (!(await store.roomExists(roomId))) {
+    ws.close(1008, 'room_not_found');
+    return;
+  }
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const sessionToken = url.searchParams.get('token');
   const session = sessionToken ? auth.validateWsSession(sessionToken, roomId) : { ok: false };

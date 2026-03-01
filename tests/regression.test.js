@@ -7,6 +7,7 @@ const { Readable } = require('node:stream');
 const auth = require('../lib/auth');
 const { handleGetWsToken, handleGetSnapshot, handlePostMessage } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
+const { handlePostRooms, handleDeleteRoom } = require('../lib/room-handlers');
 const { buildPrompt } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
 store._setLogFile(null);
@@ -36,6 +37,25 @@ function invokePost(payload, authHeader, runtime) {
     const origEnd = res.end.bind(res);
     res.end = (data) => { origEnd(data); resolve(res); };
     handlePostMessage(req, res, () => {}, runtime);
+  });
+}
+function invokeCreateRoom(payload, instanceId = 'dev:dev:3000') {
+  return new Promise((resolve) => {
+    const req = Readable.from([JSON.stringify(payload)]);
+    req.headers = {};
+    const res = makeRes();
+    const origEnd = res.end.bind(res);
+    res.end = (data) => { origEnd(data); resolve(res); };
+    handlePostRooms(req, res, instanceId);
+  });
+}
+function invokeDeleteRoom(roomId) {
+  return new Promise((resolve) => {
+    const req = { url: `/api/rooms?roomId=${encodeURIComponent(roomId)}`, headers: {} };
+    const res = makeRes();
+    const origEnd = res.end.bind(res);
+    res.end = (data) => { origEnd(data); resolve(res); };
+    handleDeleteRoom(req, res);
   });
 }
 
@@ -138,6 +158,26 @@ describe('route-handlers auth regression', () => {
     assert.equal(b2.deduped, true);
     const totalAfter = store.getSnapshot(0).totalMessages;
     assert.equal(totalAfter, totalBefore + 1);
+  });
+
+  it('GET /api/agent-snapshot returns room_not_found for deleted room', async () => {
+    const roomId = `deleted_room_${Date.now()}`;
+    const created = await invokeCreateRoom({ roomId, title: roomId, createdBy: 'tester' });
+    assert.equal(created.status, 200);
+    const deleted = await invokeDeleteRoom(roomId);
+    assert.equal(deleted.status, 200);
+
+    const creds = auth.getCredentials();
+    const req = {
+      url: `/api/agent-snapshot?since=0&roomId=${encodeURIComponent(roomId)}`,
+      headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` },
+    };
+    const res = makeRes();
+    await handleGetSnapshot(req, res, 3000);
+    assert.equal(res.status, 404);
+    assert.equal(JSON.parse(res.body).error, 'room_not_found');
+    const rooms = await store.listRooms();
+    assert.ok(!rooms.some((r) => r.roomId === roomId));
   });
 });
 

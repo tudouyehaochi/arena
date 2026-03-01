@@ -1,7 +1,7 @@
 # Arena Test Cases
 
 ## Scope
-This document describes all current automated tests (`58` total) under `tests/*.test.js`.
+This document describes all current automated tests (`59` total) under `tests/*.test.js`.
 
 ## basic.test.js
 
@@ -61,7 +61,7 @@ This document describes all current automated tests (`58` total) under `tests/*.
 
 ## regression.test.js
 
-### route-handlers auth regression suite (7)
+### route-handlers auth regression suite (8)
 35. GET /api/ws-token without Authorization issues human session: human WS token issued.
 36. GET /api/ws-token with valid Authorization issues agent session: agent WS token issued.
 37. GET /api/ws-token with invalid Authorization is rejected: invalid auth denied.
@@ -69,40 +69,41 @@ This document describes all current automated tests (`58` total) under `tests/*.
 39. GET /api/agent-snapshot with Authorization returns snapshot: snapshot returns with auth.
 40. POST /api/callbacks/post-message rejects env mismatch: callback scope mismatch rejected.
 41. POST /api/callbacks/post-message deduplicates by idempotency key: duplicate callback deduped.
+42. GET /api/agent-snapshot returns room_not_found for deleted room: deleted room cannot be recreated by snapshot polling.
 
 ### prompt-builder regression suite (2)
-42. coding context contains core rules and coding skill: coding prompt includes meta/coding rules.
-43. non-coding context still contains core rules: non-coding prompt keeps meta rules.
+43. coding context contains core rules and coding skill: coding prompt includes meta/coding rules.
+44. non-coding context still contains core rules: non-coding prompt keeps meta rules.
 
 ### mcp-file-tools default behavior suite (1)
-44. arena_read_file defaults to full numbered content: default read mode returns full numbered file.
+45. arena_read_file defaults to full numbered content: default read mode returns full numbered file.
 
 ### cli-entry regression suite (1)
-45. cli-entry with missing args exits non-zero and prints usage: CLI input validation/usage output.
+46. cli-entry with missing args exits non-zero and prints usage: CLI input validation/usage output.
 
 ## room-isolation.test.js
 
 ### room isolation suite (3)
-46. store keeps room messages separated: room A/B messages are isolated.
-47. ws token is room-scoped: WS token cannot be reused across rooms.
-48. callback post requires roomId: callback must include roomId.
+47. store keeps room messages separated: room A/B messages are isolated.
+48. ws token is room-scoped: WS token cannot be reused across rooms.
+49. callback post requires roomId: callback must include roomId.
 
 ## runtime-config.test.js
 
-49. resolvePort: prod defaults to 3001: prod default port policy.
-50. resolvePort: master branch defaults to 3001: master default port policy.
-51. resolvePort: dev non-main defaults to 3000: dev default port policy.
-52. resolvePort: explicit port wins: explicit port overrides defaults.
-53. resolveApiUrl: uses provided api url first: explicit api url precedence.
-54. resolveApiUrl: falls back to localhost with resolved port: default api url generation.
+50. resolvePort: prod defaults to 3001: prod default port policy.
+51. resolvePort: master branch defaults to 3001: master default port policy.
+52. resolvePort: dev non-main defaults to 3000: dev default port policy.
+53. resolvePort: explicit port wins: explicit port overrides defaults.
+54. resolveApiUrl: uses provided api url first: explicit api url precedence.
+55. resolveApiUrl: falls back to localhost with resolved port: default api url generation.
 
 ## room-management.test.js
 
-55. listRooms does not resurrect deleted room from backup log only: stale log lines cannot bring a deleted room back.
-56. create room rejects duplicate room id: duplicate room creation returns conflict.
-57. deleteRoom removes backup log content and allows clean re-create: delete cleans backup data and re-create starts empty.
-58. delete then create same room id succeeds via handlers: after delete API succeeds, create API can re-create the same room id.
+56. listRooms does not resurrect deleted room from backup log only: stale log lines cannot bring a deleted room back.
+57. create room rejects duplicate room id: duplicate room creation returns conflict.
+58. deleteRoom removes backup log content and allows clean re-create: delete cleans backup data and re-create starts empty.
+59. delete then create same room id succeeds via handlers: after delete API succeeds, create API can re-create the same room id.
 
 ## Notes
 - Current test command: `npm test`.
-- Current expected result: `58/58 pass`.
+- Current expected result: `59/59 pass`.
