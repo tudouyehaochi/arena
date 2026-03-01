@@ -63,23 +63,23 @@ describe('redis-context (no Redis fallback)', () => {
   const ctx = require('../lib/redis-context');
 
   it('setAgentContext does not throw without Redis', async () => {
-    await ctx.setAgentContext('清风', { currentGoal: 'test', status: 'idle' });
+    await ctx.setAgentContext('default', '清风', { currentGoal: 'test', status: 'idle' });
     // No error = success (graceful fallback)
   });
 
   it('getAgentContext returns null without Redis', async () => {
-    const result = await ctx.getAgentContext('清风');
+    const result = await ctx.getAgentContext('default', '清风');
     assert.equal(result, null);
   });
 
   it('getAllAgentContext returns null entries without Redis', async () => {
-    const result = await ctx.getAllAgentContext();
+    const result = await ctx.getAllAgentContext('default');
     assert.equal(result['清风'], null);
     assert.equal(result['明月'], null);
   });
 
   it('getSharedGoals returns empty array without Redis', async () => {
-    const goals = await ctx.getSharedGoals();
+    const goals = await ctx.getSharedGoals('default');
     assert.deepEqual(goals, []);
   });
 });

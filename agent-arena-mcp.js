@@ -15,6 +15,7 @@ const PROJECT_ROOT = process.env.ARENA_PROJECT_ROOT || path.join(__dirname);
 const REQUEST_TIMEOUT_MS = 10000;
 const RUNTIME_ENV = process.env.ARENA_ENVIRONMENT || 'dev';
 const INSTANCE_ID = process.env.ARENA_INSTANCE_ID || '';
+const ROOM_ID = process.env.ARENA_ROOM_ID || 'default';
 const TARGET_PORT = Number.parseInt(new URL(API_URL).port || '80', 10);
 
 if (!INVOCATION_ID || !CALLBACK_TOKEN) {
@@ -72,6 +73,7 @@ server.tool(
       runtimeEnv: RUNTIME_ENV,
       instanceId: INSTANCE_ID,
       targetPort: TARGET_PORT,
+      roomId: ROOM_ID,
       idempotencyKey: crypto.randomUUID(),
     });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
@@ -87,10 +89,11 @@ server.tool(
   },
   async ({ detail = false, agentContext = false }) => {
     const endpoint = detail ? 'agent-snapshot' : 'agent-snapshot?summary=1';
-    const result = await httpRequest('GET', `${API_URL}/api/${endpoint}`);
+    const join = endpoint.includes('?') ? '&' : '?';
+    const result = await httpRequest('GET', `${API_URL}/api/${endpoint}${join}roomId=${encodeURIComponent(ROOM_ID)}`);
     if (agentContext) {
       try {
-        const ctx = await httpRequest('GET', `${API_URL}/api/agent-context`);
+        const ctx = await httpRequest('GET', `${API_URL}/api/agent-context?roomId=${encodeURIComponent(ROOM_ID)}`);
         result.agentContext = ctx;
       } catch {}
     }
@@ -110,7 +113,7 @@ server.tool(
   },
   async ({ from, currentGoal, status, lastFile, lastAction }) => {
     const result = await httpRequest('POST', `${API_URL}/api/agent-context`, {
-      from, currentGoal, status, lastFile, lastAction,
+      from, currentGoal, status, lastFile, lastAction, roomId: ROOM_ID,
     });
     return { content: [{ type: 'text', text: JSON.stringify(result) }] };
   }

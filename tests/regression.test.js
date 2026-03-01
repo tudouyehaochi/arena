@@ -40,12 +40,12 @@ function invokePost(payload, authHeader, runtime) {
 
 describe('route-handlers auth regression', () => {
   it('GET /api/ws-token without Authorization issues human session', async () => {
-    const req = { url: '/api/ws-token', headers: {} };
+    const req = { url: '/api/ws-token?roomId=default', headers: {} };
     const res = makeRes();
     await handleGetWsToken(req, res);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
-    const session = auth.validateWsSession(data.token);
+    const session = auth.validateWsSession(data.token, 'default');
     assert.equal(session.ok, true);
     assert.equal(session.identity, 'human');
   });
@@ -53,20 +53,20 @@ describe('route-handlers auth regression', () => {
   it('GET /api/ws-token with valid Authorization issues agent session', async () => {
     const creds = auth.getCredentials();
     const req = {
-      url: '/api/ws-token',
+      url: '/api/ws-token?roomId=default',
       headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` },
     };
     const res = makeRes();
     await handleGetWsToken(req, res);
     assert.equal(res.status, 200);
     const data = JSON.parse(res.body);
-    const session = auth.validateWsSession(data.token);
+    const session = auth.validateWsSession(data.token, 'default');
     assert.equal(session.ok, true);
     assert.equal(session.identity, 'agent');
   });
 
   it('GET /api/ws-token with invalid Authorization is rejected', async () => {
-    const req = { url: '/api/ws-token', headers: { authorization: 'Bearer bad:bad' } };
+    const req = { url: '/api/ws-token?roomId=default', headers: { authorization: 'Bearer bad:bad' } };
     const res = makeRes();
     await handleGetWsToken(req, res);
     assert.equal(res.status, 401);
@@ -85,7 +85,7 @@ describe('route-handlers auth regression', () => {
     const creds = auth.getCredentials();
     await store.addMessage({ type: 'chat', from: '镇元子', content: 'snapshot seed' });
     const req = {
-      url: '/api/agent-snapshot?since=0',
+      url: '/api/agent-snapshot?since=0&roomId=default',
       headers: { authorization: `Bearer ${creds.invocationId}:${creds.callbackToken}` },
     };
     const res = makeRes();
@@ -103,6 +103,7 @@ describe('route-handlers auth regression', () => {
     const res = await invokePost({
       content: 'test',
       from: '明月',
+      roomId: 'default',
       instanceId: 'prod:master:3001',
       runtimeEnv: 'prod',
       targetPort: 3001,
@@ -120,6 +121,7 @@ describe('route-handlers auth regression', () => {
     const payload = {
       content: 'idempotent-msg',
       from: '明月',
+      roomId: 'default',
       instanceId: 'dev:dev:3000',
       runtimeEnv: 'dev',
       targetPort: 3000,

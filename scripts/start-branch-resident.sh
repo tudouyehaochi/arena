@@ -9,6 +9,7 @@ TARGET_BRANCH=""
 ENV_ARG=""
 PORT_ARG=""
 API_URL_ARG=""
+ROOM_ID_ARG=""
 
 usage() {
   cat <<EOF
@@ -18,6 +19,7 @@ Usage:
 Examples:
   npm run start:branch -- --branch dev --env dev --port 3000
   npm run start:branch -- --branch master --env prod --port 3001
+  npm run start:branch -- --branch dev --env dev --port 3000 --room-id team-a
 EOF
 }
 
@@ -37,6 +39,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --api-url)
       API_URL_ARG="${2:-}"
+      shift 2
+      ;;
+    --room-id)
+      ROOM_ID_ARG="${2:-}"
       shift 2
       ;;
     -h|--help)
@@ -88,6 +94,9 @@ if [ -n "$PORT_ARG" ]; then
 fi
 if [ -n "$API_URL_ARG" ]; then
   CMD+=(--api-url "$API_URL_ARG")
+fi
+if [ -n "$ROOM_ID_ARG" ]; then
+  CMD+=(--room-id "$ROOM_ID_ARG")
 fi
 
 echo "[start:branch] branch=$TARGET_BRANCH workspace=$TARGET_DIR"
