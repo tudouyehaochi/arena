@@ -78,4 +78,23 @@ describe('a2a-router', () => {
     assert.equal(r2.added.length, 1);
     assert.equal(r2.added[0].depth, 1);
   });
+
+  it('activation budget limits tasks and records dropped reason', async () => {
+    const router = createA2ARouter({
+      roomId: 'default',
+      redisClient: fakeRedis(),
+      agents: ['清风', '明月'],
+      defaultAgent: '清风',
+      activationBudgetPerTurn: 1,
+    });
+    const r = await router.ingest([
+      { seq: 40, from: '镇元子', content: '@清风 @明月 一起看' },
+    ]);
+    assert.equal(r.added.length, 1);
+    assert.equal(r.dropped.length, 1);
+    assert.equal(r.dropped[0].reason, 'activation_budget');
+    assert.equal(r.dropReasons.activation_budget, 1);
+    assert.ok(Array.isArray(r.candidateRoles));
+    assert.ok(Array.isArray(r.activeRoles));
+  });
 });

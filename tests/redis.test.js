@@ -103,4 +103,16 @@ describe('session-memory async (memory Redis)', () => {
     assert.ok(Array.isArray(summary.changedFiles));
     assert.ok(summary.changedFiles.includes('auth.js'));
   });
+
+  it('summarizeMessages respects retrieval topK and ranks candidates', () => {
+    const summary = memory.summarizeMessages([
+      { from: '镇元子', content: '下一步修复 api.js error 500 并复测' },
+      { from: '明月', content: '决定采用方案A，修复通过，见 auth.js' },
+      { from: '清风', content: 'todo: 回归测试 billing.ts' },
+      { from: '镇元子', content: '计划：补齐文档 readme.md' },
+    ], { topK: 2 });
+    assert.ok(Array.isArray(summary.retrievalCandidates));
+    assert.equal(summary.retrievalCandidates.length, 2);
+    assert.equal(summary.retrievalCount, 2);
+  });
 });

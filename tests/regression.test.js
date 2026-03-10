@@ -54,6 +54,18 @@ describe('prompt-builder regression', () => {
     assert.match(prompt, /不会冷场/);
     assert.match(prompt, /优先正确性与安全性/);
   });
+
+  it('prompt includes long-term memory snippets when provided', () => {
+    const prompt = buildPrompt('清风', [{ from: '镇元子', content: '继续推进' }], {
+      promptMode: 'optimized',
+      longTermMemory: [
+        { type: 'decision', summary: '决定采用分层检索策略' },
+        { type: 'procedure', summary: '先跑最小测试再扩展验证' },
+      ],
+    });
+    assert.match(prompt, /memory=decision:决定采用分层检索策略/);
+    assert.match(prompt, /procedure:先跑最小测试再扩展验证/);
+  });
 });
 
 describe('mcp-file-tools default behavior', () => {

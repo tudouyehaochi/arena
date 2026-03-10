@@ -31,6 +31,10 @@
   <div class="card h"><strong>Arena Admin</strong><span id="stamp" class="sp"></span><button id="refresh" class="btn">刷新</button><button id="check" class="btn">运行完整性校验</button><button id="logout" class="btn">退出</button></div>
   <div class="card"><div class="h"><strong>运行状态</strong></div><div id="runtime" class="grid"></div></div>
   <div class="card"><div class="h"><strong>完整性与房间</strong></div><div id="integrity"></div></div>
+  <div class="card">
+    <div class="h"><strong>Agent 模型配置</strong><span class="sp"></span><button id="save-agent-models" class="btn">保存</button></div>
+    <table class="tbl"><thead><tr><th>角色</th><th>后端模型</th></tr></thead><tbody id="agent-models-body"></tbody></table>
+  </div>
   <div class="card"><div class="h"><strong>告警</strong></div><table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table></div>
   <div class="card"><div class="h"><strong>备份</strong></div><table class="tbl"><thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead><tbody id="backups"></tbody></table></div>
 </div>
@@ -43,6 +47,28 @@
   const fmtBytes=(n)=>{const v=Number(n||0);if(v<1024)return v+' B';if(v<1024*1024)return(v/1024).toFixed(1)+' KB';if(v<1024*1024*1024)return(v/1024/1024).toFixed(1)+' MB';return(v/1024/1024/1024).toFixed(2)+' GB';};
   const levelClass=(l)=>l==='CRITICAL'?'bad':(l==='WARN'?'warn':'ok');
   const showAdmin=(on)=>{$('login-panel').className=on?'wrap hide':'wrap';$('admin-panel').className=on?'wrap':'wrap hide';};
+  let agentModels={};
+
+  function renderAgentModels(models,allowedModels){
+    agentModels={...(models||{})};
+    const roles=Object.keys(agentModels);
+    const opts=(allowedModels||['claude','codex']).map((m)=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
+    $('agent-models-body').innerHTML=roles.map((role)=>{
+      const model=agentModels[role]||'claude';
+      return `<tr><td>${esc(role)}</td><td><select class="input" data-agent="${esc(role)}">${opts}</select></td></tr>`;
+    }).join('');
+    document.querySelectorAll('[data-agent]').forEach((sel)=>{
+      const role=sel.dataset.agent;
+      sel.value=agentModels[role]||'claude';
+      sel.onchange=()=>{agentModels[role]=sel.value;};
+    });
+  }
+
+  async function loadAgentModels(){
+    const {res,data}=await api('/api/admin/agent-models');
+    if(!res.ok){throw new Error(data.error||res.status);}
+    renderAgentModels(data.models||{},data.allowedModels||['claude','codex']);
+  }
 
   async function api(path,opt={}){
     const res=await fetch(path,{...opt,headers:{...authHeaders(),...(opt.headers||{})}});
@@ -59,6 +85,7 @@
     $('runtime').innerHTML=[['Redis',r.redisReady?'READY':'DOWN'],['Redis URL',r.redisUrl||''],['Redis Ver',r.redisVersion||''],['Clients',r.connectedClients||0],['Memory',r.usedMemoryHuman||fmtBytes(r.usedMemory)],['AOF',String(r.aofEnabled)],['Rooms',data.rooms?.total||0],['PID',r.pid||'']].map(x=>`<div class="kv"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1])}</div></div>`).join('');
     const integ=data.integrity;
     $('integrity').innerHTML=!integ?'<span class="warn">尚未运行完整性校验</span>':`<div class="${integ.ok?'ok':'bad'}">状态: ${integ.ok?'PASS':'FAIL'} | rooms=${integ.roomCount} messages=${integ.totalMessages} issues=${(integ.issues||[]).length}</div><div>最近检查: ${esc(integ.checkedAt||'')}</div>`;
+    await loadAgentModels();
     $('alerts').innerHTML=(data.alerts||[]).map(a=>`<tr><td>${esc(a.ts)}</td><td class="${levelClass(a.level)}">${esc(a.level)}</td><td>${esc(a.event)}</td><td>${esc(JSON.stringify(a.detail||{}))}</td><td>${a.acked?'已确认':`<button class="btn" data-ack="${esc(a.id)}">确认</button>`}</td></tr>`).join('');
     document.querySelectorAll('[data-ack]').forEach((b)=>b.onclick=async()=>{const r=await api('/api/admin/alerts/ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.ack})});if(!r.res.ok){alert('确认失败');return;}load();});
     $('backups').innerHTML=(data.backups||[]).map(b=>`<tr><td>${esc(b.name)}</td><td>${esc(fmtBytes(b.size))}</td><td>${esc(b.mtime)}</td></tr>`).join('');
@@ -75,6 +102,12 @@
   $('logout').onclick=async()=>{await api('/api/admin/logout',{method:'POST'});showAdmin(false);};
   $('refresh').onclick=()=>load().catch((e)=>alert(e.message));
   $('check').onclick=async()=>{const {res,data}=await api('/api/admin/check',{method:'POST'});if(!res.ok){alert('校验失败: '+(data.error||res.status));return;}load();};
+  $('save-agent-models').onclick=async()=>{
+    const {res,data}=await api('/api/admin/agent-models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({models:agentModels})});
+    if(!res.ok){alert('保存失败: '+(data.error||res.status));return;}
+    await loadAgentModels();
+    alert('已保存，runner 会在几秒内自动刷新配置');
+  };
   load().catch(()=>showAdmin(false));
 })();
 </script>
