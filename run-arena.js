@@ -108,7 +108,7 @@ function logInvoke(task, prompt, count, summaryOnly) {
       depth: task.depth,
     },
   };
-  fs.appendFileSync(METRICS_LOG, JSON.stringify(row) + '\n');
+  fs.appendFile(METRICS_LOG, JSON.stringify(row) + '\n', 'utf8', () => {});
 }
 
 async function invokeTask(task, recentMessages) {

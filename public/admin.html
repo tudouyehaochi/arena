@@ -38,8 +38,7 @@
 (()=>{
   const $=(id)=>document.getElementById(id);
   const keyFromUrl=new URLSearchParams(location.search).get('adminKey')||'';
-  let adminToken=localStorage.getItem('arena_admin_token')||'';
-  const authHeaders=()=>{const h={};if(keyFromUrl)h['x-admin-key']=keyFromUrl;if(adminToken)h['x-admin-token']=adminToken;return h;};
+  const authHeaders=()=>{const h={};if(keyFromUrl)h['x-admin-key']=keyFromUrl;return h;};
   const esc=(s)=>{const d=document.createElement('div');d.textContent=String(s??'');return d.innerHTML;};
   const fmtBytes=(n)=>{const v=Number(n||0);if(v<1024)return v+' B';if(v<1024*1024)return(v/1024).toFixed(1)+' KB';if(v<1024*1024*1024)return(v/1024/1024).toFixed(1)+' MB';return(v/1024/1024/1024).toFixed(2)+' GB';};
   const levelClass=(l)=>l==='CRITICAL'?'bad':(l==='WARN'?'warn':'ok');
@@ -70,12 +69,10 @@
     const password=$('password').value;
     const {res,data}=await fetch('/api/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})}).then(async r=>({res:r,data:await r.json().catch(()=>({}))}));
     if(!res.ok){$('login-msg').textContent='登录失败: '+(data.error||res.status);return;}
-    adminToken=data.token||'';
-    localStorage.setItem('arena_admin_token',adminToken);
     $('login-msg').textContent='';
     load();
   };
-  $('logout').onclick=async()=>{await api('/api/admin/logout',{method:'POST'});adminToken='';localStorage.removeItem('arena_admin_token');showAdmin(false);};
+  $('logout').onclick=async()=>{await api('/api/admin/logout',{method:'POST'});showAdmin(false);};
   $('refresh').onclick=()=>load().catch((e)=>alert(e.message));
   $('check').onclick=async()=>{const {res,data}=await api('/api/admin/check',{method:'POST'});if(!res.ok){alert('校验失败: '+(data.error||res.status));return;}load();};
   load().catch(()=>showAdmin(false));

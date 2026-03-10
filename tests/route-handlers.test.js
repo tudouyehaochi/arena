@@ -184,14 +184,13 @@ describe('route-handlers auth regression', () => {
     assert.ok(Array.isArray(JSON.parse(res.body).rooms));
   });
 
-  it('POST /api/admin/login accepts default credentials', async () => {
+  it('POST /api/admin/login rejects when password is not configured', async () => {
     const req = Readable.from([JSON.stringify({ username: 'admin', password: 'arena_123' })]);
     req.headers = {};
     const res = makeRes();
     await handlePostAdminLogin(req, res);
-    assert.equal(res.status, 200);
+    assert.equal(res.status, 503);
     const data = JSON.parse(res.body);
-    assert.equal(data.status, 'ok');
-    assert.ok(typeof data.token === 'string' && data.token.length > 10);
+    assert.equal(data.error, 'admin_password_not_configured');
   });
 });

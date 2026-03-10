@@ -64,7 +64,6 @@ function handleGetEnv(_req, res) {
     defaultRoomId: DEFAULT_ROOM,
     publicBaseUrl: PUBLIC_BASE_URL,
     publicWebUrl: `${PUBLIC_BASE_URL}/?roomId=${encodeURIComponent(DEFAULT_ROOM)}`,
-    publicAdminUrl: `${PUBLIC_BASE_URL}/admin?adminKey=${encodeURIComponent(ADMIN_KEY)}`,
   });
 }
 function handleGetAgentStatus(req, res) {
@@ -198,9 +197,9 @@ async function start() {
     console.log(`Chat URL: ${PUBLIC_BASE_URL}/?roomId=${encodeURIComponent(DEFAULT_ROOM)}`);
     console.log(`\n--- MCP Callback Credentials (TTL: ${auth.TOKEN_TTL_MS / 60000}min) ---`);
     console.log(`ARENA_INVOCATION_ID=${creds.invocationId}`);
-    console.log(`ARENA_CALLBACK_TOKEN=${creds.callbackToken}`);
-    console.log(`Auth header: Authorization: Bearer ${creds.invocationId}:${creds.callbackToken}:${creds.jti}`);
-    console.log(`Admin URL: ${PUBLIC_BASE_URL}/admin?adminKey=${ADMIN_KEY}`);
+    console.log('ARENA_CALLBACK_TOKEN=<hidden>');
+    console.log(`Auth header: Authorization: Bearer ${creds.invocationId}:<hidden>:${creds.jti}`);
+    console.log('Admin URL: /admin (provide adminKey via URL/header when needed)');
     console.log('--------------------------------------------------\n');
   });
 }

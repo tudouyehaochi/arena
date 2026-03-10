@@ -289,6 +289,7 @@ body {
 
   let ws;
   let isComposing = false;
+  let refreshTimer = null;
   const AGENT_COLORS = { 清风: '#14b8a6', 明月: '#3b82f6' };
   const AGENT_MODELS = { 清风: 'Claude', 明月: 'Codex' };
 
@@ -378,6 +379,14 @@ body {
     renderRooms(roomsRes.rooms || []);
   }
 
+  function scheduleRefresh(delay = 300) {
+    if (refreshTimer) return;
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      refresh().catch(() => {});
+    }, delay);
+  }
+
   function renderMsg(m, options = {}) {
     const shouldStickBottom = options.forceScroll || isNearBottom();
 
@@ -428,7 +437,7 @@ body {
 
     ws.onopen = () => {
       ui.status.textContent = 'online';
-      refresh().catch(() => {});
+      scheduleRefresh(0);
     };
 
     ws.onclose = () => {
@@ -445,7 +454,7 @@ body {
       } else {
         renderMsg(d);
       }
-      refresh().catch(() => {});
+      scheduleRefresh();
     };
   }
 
