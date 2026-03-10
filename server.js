@@ -15,10 +15,11 @@ const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-c
 const { handleGetDashboard } = require('./lib/dashboard-handlers');
 const { handleGetRooms, handlePostRooms, handleDeleteRoom } = require('./lib/room-handlers');
 const { handlePostUsage } = require('./lib/usage-handlers');
-const { servePublicFile } = require('./lib/static-serve');
+const { servePublicFile, servePublicPath } = require('./lib/static-serve');
 const {
   handleGetAdmin,
   handleGetAdminStatus,
+  handleGetAdminBootstrap,
   handlePostAdminCheck,
   handlePostAdminAlertAck,
   handlePostAdminLogin,
@@ -76,6 +77,7 @@ function handleGetAgentStatus(req, res) {
 }
 const routes = {
   'GET /': handleGetIndex,
+  'GET /dashboard': servePublicFile('dashboard.html'),
   'GET /lianliankan': servePublicFile('lianliankan.html'),
   'GET /api/messages': handleGetMessages,
   'GET /api/env': handleGetEnv,
@@ -86,6 +88,7 @@ const routes = {
   'GET /api/rooms': handleGetRooms,
   'GET /admin': handleGetAdmin,
   'GET /api/admin/status': handleGetAdminStatus,
+  'GET /api/admin/bootstrap': handleGetAdminBootstrap,
   'GET /api/admin/agent-models': handleGetAdminAgentModels,
   'GET /api/admin/roles': handleGetAdminRoles,
 };
@@ -105,6 +108,7 @@ const server = http.createServer((req, res) => {
   const urlPath = (req.url || '/').split('?')[0];
   const key = `${method} ${urlPath}`;
   if (routes[key]) { safeAsync(routes[key])(req, res); return; }
+  if (method === 'GET' && urlPath.startsWith('/js/')) { safeAsync((rq, rs) => servePublicPath(rq, rs, '/'))(req, res); return; }
   if (method === 'POST' && urlPath === '/api/callbacks/post-message') {
     safeAsync(handlePostMessage)(req, res, broadcast, { instanceId: INSTANCE_ID, runtimeEnv: RUNTIME_ENV, targetPort: PORT });
     return;

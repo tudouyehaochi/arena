@@ -5,7 +5,12 @@ const { Readable } = require('node:stream');
 const auth = require('../lib/auth');
 const { handleGetWsToken, handleGetSnapshot } = require('../lib/route-handlers');
 const store = require('../lib/message-store');
-const { handleGetAdmin, handleGetAdminStatus, handlePostAdminLogin } = require('../lib/admin-handlers');
+const {
+  handleGetAdmin,
+  handleGetAdminStatus,
+  handleGetAdminBootstrap,
+  handlePostAdminLogin,
+} = require('../lib/admin-handlers');
 const { handleGetRooms } = require('../lib/room-handlers');
 const { handleGetDashboard } = require('../lib/dashboard-handlers');
 const { makeRes, invokePost, invokeCreateRoom, invokeDeleteRoom } = require('./test-helpers');
@@ -192,5 +197,19 @@ describe('route-handlers auth regression', () => {
     assert.equal(res.status, 503);
     const data = JSON.parse(res.body);
     assert.equal(data.error, 'admin_password_not_configured');
+  });
+
+  it('GET /api/admin/bootstrap returns aggregated payload with admin key', async () => {
+    const prev = process.env.ARENA_ADMIN_KEY;
+    process.env.ARENA_ADMIN_KEY = 'bootstrap-key';
+    const req = { url: '/api/admin/bootstrap?adminKey=bootstrap-key', headers: {} };
+    const res = makeRes();
+    await handleGetAdminBootstrap(req, res);
+    assert.equal(res.status, 200);
+    const data = JSON.parse(res.body);
+    assert.ok(data.runtime);
+    assert.ok(Array.isArray(data.roles));
+    assert.ok(data.agentModels && typeof data.agentModels === 'object');
+    process.env.ARENA_ADMIN_KEY = prev;
   });
 });

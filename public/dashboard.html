@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
+<title>Arena Dashboard</title>
+<style>
+:root{--bg:#f5f7fb;--card:#fff;--line:#dce3ee;--ink:#1f2937;--muted:#64748b}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Avenir Next","PingFang SC",sans-serif;color:var(--ink)}
+.wrap{max-width:1200px;margin:0 auto;padding:14px;display:grid;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.h{display:flex;align-items:center;gap:8px}.sp{margin-left:auto}.btn{border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}.kv{border:1px solid var(--line);border-radius:8px;padding:8px}.k{font-size:12px;color:var(--muted)}.v{font-weight:700}
+.rooms{display:flex;flex-wrap:wrap;gap:6px}.rbtn{font-size:12px;border:1px solid var(--line);background:#fff;padding:7px 10px;border-radius:999px;cursor:pointer}.rbtn.active{background:#dbeafe;border-color:#93c5fd}
+.search{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:200px}
+.agent{border:1px solid var(--line);border-radius:14px;padding:10px;background:linear-gradient(180deg,#fff,#f8fbff)}.row{display:flex;align-items:center;gap:8px;min-width:0}.agent-avatar{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;font-weight:700;color:#fff}.name{font-weight:700}.sub{font-size:12px;color:var(--muted)}.pill{margin-left:auto;font-size:11px;padding:3px 8px;border-radius:999px;background:#ecfeff;color:#155e75}.line{margin-top:8px;font-size:12px;color:#334155}
+@media (max-width:720px){.grid{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card h">
+    <strong>Arena Dashboard</strong>
+    <span id="env" class="sp k"></span>
+    <button id="to-chat" class="btn">Chat</button>
+    <button id="to-admin" class="btn">Admin</button>
+    <button id="refresh" class="btn">刷新</button>
+  </div>
+  <div class="card"><div class="h"><strong>房间</strong><span class="sp"></span><input id="room-q" class="search" placeholder="筛选 room id"></div><div id="rooms" class="rooms" style="margin-top:8px"></div></div>
+  <div class="card"><div class="h"><strong>运行指标</strong></div><div id="stats" class="grid"></div><div id="route" class="k" style="margin-top:8px"></div></div>
+  <div class="card"><div class="h"><strong>角色状态</strong></div><div id="agents" style="display:grid;gap:8px;margin-top:8px"></div></div>
+</div>
+<script src="/js/dashboard-app.js"></script>
+</body>
+</html>
