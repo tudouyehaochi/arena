@@ -3,7 +3,7 @@ const fs = require('fs');
 const { buildPrompt } = require('./lib/prompt-builder');
 const memory = require('./lib/session-memory');
 const longMemory = require('./lib/long-memory');
-const agentModelConfig = require('./lib/agent-model-config');
+const agentRegistry = require('./lib/agent-registry');
 const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
 const { createA2ARouter } = require('./lib/a2a-router');
@@ -48,7 +48,8 @@ const DEGRADE_ENABLED = toBool(process.env.ARENA_DEGRADE_ENABLED, true);
 const CIRCUIT_BREAKER_ENABLED = toBool(process.env.ARENA_CIRCUIT_BREAKER_ENABLED, true);
 const CIRCUIT_ERROR_WINDOW = toPositiveInt(process.env.ARENA_CIRCUIT_ERROR_WINDOW, 5);
 const CIRCUIT_COOLDOWN_MS = toPositiveInt(process.env.ARENA_CIRCUIT_COOLDOWN_MS, 30000);
-const AGENTS = new Set(AGENT_NAMES);
+let currentAgentNames = [...AGENT_NAMES];
+let currentAgents = new Set(currentAgentNames);
 const PROMPT_MODE = String(process.env.ARENA_PROMPT_MODE || 'optimized').trim().toLowerCase() === 'legacy'
   ? 'legacy'
   : 'optimized';
@@ -81,7 +82,7 @@ let renewTimer = null;
 let degradeLevel = 0;
 let lastRouteMeta = { candidateRoles: [], activeRoles: [], droppedRoles: 0, dropReasons: {}, retrievalCount: 0 };
 let longTermMemory = [];
-let agentModelMap = agentModelConfig.getDefaultAgentModelMap();
+let roleMap = {};
 let modelRefreshTimer = null;
 const circuit = new CircuitBreaker({
   enabled: CIRCUIT_BREAKER_ENABLED,
@@ -138,7 +139,7 @@ function logInvoke(task, prompt, count, summaryOnly, meta = {}) {
     route: {
       sourceSeq: task.sourceSeq,
       sourceFrom: task.sourceFrom,
-      sourceType: AGENTS.has(task.sourceFrom) ? 'agent' : 'human',
+      sourceType: currentAgents.has(task.sourceFrom) ? 'agent' : 'human',
       depth: task.depth,
     },
   };
@@ -169,9 +170,11 @@ async function invokeTask(task, recentMessages) {
     ...lastRouteMeta,
     degradeLevel,
   });
-  const rt = agentRuntime[task.target];
+  const rt = agentRuntime[task.target] || agentRuntime.ensureRole(task.target);
+  if (!rt) return;
   const controller = new AbortController();
-  const resolved = rt.resolve(prompt, agentModelMap[task.target]);
+  const configuredRole = roleMap[task.target] || {};
+  const resolved = rt.resolve(prompt, configuredRole.model);
   activeAbort = controller;
   await writeRouteState(redis.getClient(), ROOM_ID, {
     queued: router.stats().queued,
@@ -277,8 +280,9 @@ async function pollOnce() {
   while (processed < maxTasksThisPoll) {
     const task = router.nextTask();
     if (!task) break;
-    if (snapshot.consecutiveAgentTurns >= MAX_AGENT_TURNS && AGENTS.has(task.sourceFrom)) continue;
-    if (!agentRuntime[task.target].canRun()) continue;
+    if (snapshot.consecutiveAgentTurns >= MAX_AGENT_TURNS && currentAgents.has(task.sourceFrom)) continue;
+    const runtime = agentRuntime[task.target] || agentRuntime.ensureRole(task.target);
+    if (!runtime || !runtime.canRun()) continue;
     console.log(`[route] exec target=${task.target} depth=${task.depth} source=${task.sourceFrom}#${task.sourceSeq}`);
     await invokeTask(task, recentMessages);
     processed++;
@@ -291,8 +295,19 @@ async function main() {
   console.log(`Ops: activationBudget=${ACTIVATION_BUDGET_PER_TURN} promptBudget=${PROMPT_BUDGET_CHARS} retrievalTopK=${RETRIEVAL_TOPK}`);
   redis.startConnect();
   await redis.waitUntilReady(5000);
-  agentModelMap = await agentModelConfig.getAgentModelMap().catch(() => agentModelMap);
-  router = createA2ARouter({ roomId: ROOM_ID, redisClient: redis.getClient(), agents: AGENT_NAMES, maxDepth: MAX_A2A_DEPTH, defaultAgent: '清风' });
+  const loaded = await agentRegistry.refreshRoleCache().catch(() => null);
+  if (loaded && Array.isArray(loaded.enabledAgentNames) && loaded.enabledAgentNames.length > 0) {
+    currentAgentNames = loaded.enabledAgentNames;
+    currentAgents = new Set(currentAgentNames);
+    roleMap = Object.fromEntries((loaded.roles || []).map((r) => [r.name, r]));
+  }
+  router = createA2ARouter({
+    roomId: ROOM_ID,
+    redisClient: redis.getClient(),
+    agents: currentAgentNames,
+    maxDepth: MAX_A2A_DEPTH,
+    defaultAgent: currentAgentNames[0] || '清风',
+  });
   sessionSummary = await memory.loadSummary(SUMMARY_PATH, `room:${ROOM_ID}:session:summary`);
   lock = await acquireRoomLockWithRetry(redis.getClient(), ROOM_ID, `${INSTANCE_ID}:${process.pid}`);
   renewTimer = setInterval(async () => {
@@ -301,9 +316,24 @@ async function main() {
   }, 10000);
   renewTimer.unref();
 
-  await Promise.all([agentRuntime.清风.setup().catch(() => {}), agentRuntime.明月.setup().catch(() => {})]);
+  await Promise.all(currentAgentNames.map((name) => {
+    const rt = agentRuntime.ensureRole(name);
+    return rt ? rt.setup().catch(() => {}) : Promise.resolve();
+  }));
   modelRefreshTimer = setInterval(async () => {
-    agentModelMap = await agentModelConfig.getAgentModelMap().catch(() => agentModelMap);
+    const latest = await agentRegistry.refreshRoleCache().catch(() => null);
+    if (!latest) return;
+    const nextNames = Array.isArray(latest.enabledAgentNames) && latest.enabledAgentNames.length > 0
+      ? latest.enabledAgentNames
+      : currentAgentNames;
+    currentAgentNames = nextNames;
+    currentAgents = new Set(nextNames);
+    roleMap = Object.fromEntries((latest.roles || []).map((r) => [r.name, r]));
+    if (router && typeof router.setAgents === 'function') router.setAgents(nextNames);
+    await Promise.all(nextNames.map((name) => {
+      const rt = agentRuntime.ensureRole(name);
+      return rt ? rt.setup().catch(() => {}) : Promise.resolve();
+    }));
   }, 5000);
   modelRefreshTimer.unref();
   const listener = startRealtimeListener({
@@ -320,7 +350,10 @@ async function main() {
     if (activeAbort) activeAbort.abort();
     if (renewTimer) clearInterval(renewTimer);
     if (modelRefreshTimer) clearInterval(modelRefreshTimer);
-    await Promise.all([agentRuntime.清风.cleanup().catch(() => {}), agentRuntime.明月.cleanup().catch(() => {})]);
+    await Promise.all(currentAgentNames.map((name) => {
+      const rt = agentRuntime.ensureRole(name);
+      return rt ? rt.cleanup().catch(() => {}) : Promise.resolve();
+    }));
     if (lock) await releaseRunnerLock(redis.getClient(), lock).catch(() => {});
     await redis.disconnect();
     process.exit(0);

@@ -97,4 +97,17 @@ describe('a2a-router', () => {
     assert.ok(Array.isArray(r.candidateRoles));
     assert.ok(Array.isArray(r.activeRoles));
   });
+
+  it('setAgents hot reloads mention targets', async () => {
+    const router = createA2ARouter({
+      roomId: 'default',
+      redisClient: fakeRedis(),
+      agents: ['清风', '明月'],
+      defaultAgent: '清风',
+    });
+    router.setAgents(['清风', '二郎神']);
+    const r = await router.ingest([{ seq: 50, from: '镇元子', content: '@二郎神 来处理' }]);
+    assert.equal(r.added.length, 1);
+    assert.equal(r.added[0].target, '二郎神');
+  });
 });

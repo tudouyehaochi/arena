@@ -25,6 +25,8 @@ const {
   handlePostAdminLogout,
   handleGetAdminAgentModels,
   handlePostAdminAgentModels,
+  handleGetAdminRoles,
+  handlePostAdminRoles,
   runIntegrityCheck,
   LAST_CHECK_KEY,
 } = require('./lib/admin-handlers');
@@ -85,6 +87,7 @@ const routes = {
   'GET /admin': handleGetAdmin,
   'GET /api/admin/status': handleGetAdminStatus,
   'GET /api/admin/agent-models': handleGetAdminAgentModels,
+  'GET /api/admin/roles': handleGetAdminRoles,
 };
 function safeAsync(handler) {
   return (req, res, ...args) => {
@@ -115,6 +118,7 @@ const server = http.createServer((req, res) => {
   if (method === 'POST' && urlPath === '/api/admin/check') { safeAsync(handlePostAdminCheck)(req, res, { instanceId: INSTANCE_ID, runtimeEnv: RUNTIME_ENV, port: PORT }); return; }
   if (method === 'POST' && urlPath === '/api/admin/alerts/ack') { safeAsync(handlePostAdminAlertAck)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/agent-models') { safeAsync(handlePostAdminAgentModels)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/roles') { safeAsync(handlePostAdminRoles)(req, res); return; }
   if (method === 'GET' && (urlPath === '/api/agent-snapshot' || urlPath === '/api/callbacks/thread-context')) {
     safeAsync(handleGetSnapshot)(req, res, PORT); return;
   }
