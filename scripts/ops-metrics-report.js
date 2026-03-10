@@ -23,6 +23,11 @@ function dayKey(ts) {
 
 function summarize(rows) {
   const byDay = {};
+  const byWeek = {};
+  function weekKey(day) {
+    if (day === 'unknown') return 'unknown';
+    return day.slice(0, 7);
+  }
   for (const row of rows) {
     const day = dayKey(row.ts);
     if (!byDay[day]) {
@@ -39,15 +44,38 @@ function summarize(rows) {
         maxDegradeLevel: 0,
       };
     }
+    const wk = weekKey(day);
+    if (!byWeek[wk]) {
+      byWeek[wk] = {
+        invokes: 0,
+        avgPromptChars: 0,
+        totalPromptChars: 0,
+        avgActiveRoles: 0,
+        totalActiveRoles: 0,
+        avgRetrievalCount: 0,
+        totalRetrievalCount: 0,
+        droppedRoles: 0,
+        circuitOpenCount: 0,
+        maxDegradeLevel: 0,
+      };
+    }
     const d = byDay[day];
+    const w = byWeek[wk];
     d.invokes += 1;
+    w.invokes += 1;
     d.totalPromptChars += Number(row.promptChars || 0);
+    w.totalPromptChars += Number(row.promptChars || 0);
     const activeRoles = Array.isArray(row.activeRoles) ? row.activeRoles.length : 0;
     d.totalActiveRoles += activeRoles;
+    w.totalActiveRoles += activeRoles;
     d.totalRetrievalCount += Number(row.retrievalCount || 0);
+    w.totalRetrievalCount += Number(row.retrievalCount || 0);
     d.droppedRoles += Number(row.droppedRoles || 0);
+    w.droppedRoles += Number(row.droppedRoles || 0);
     if (row.circuitOpen) d.circuitOpenCount += 1;
+    if (row.circuitOpen) w.circuitOpenCount += 1;
     d.maxDegradeLevel = Math.max(d.maxDegradeLevel, Number(row.degradeLevel || 0));
+    w.maxDegradeLevel = Math.max(w.maxDegradeLevel, Number(row.degradeLevel || 0));
   }
 
   for (const day of Object.keys(byDay)) {
@@ -56,15 +84,21 @@ function summarize(rows) {
     d.avgActiveRoles = Number((d.totalActiveRoles / Math.max(1, d.invokes)).toFixed(2));
     d.avgRetrievalCount = Number((d.totalRetrievalCount / Math.max(1, d.invokes)).toFixed(2));
   }
+  for (const week of Object.keys(byWeek)) {
+    const w = byWeek[week];
+    w.avgPromptChars = Math.round(w.totalPromptChars / Math.max(1, w.invokes));
+    w.avgActiveRoles = Number((w.totalActiveRoles / Math.max(1, w.invokes)).toFixed(2));
+    w.avgRetrievalCount = Number((w.totalRetrievalCount / Math.max(1, w.invokes)).toFixed(2));
+  }
 
-  return byDay;
+  return { byDay, byWeek };
 }
 
 const rows = parseLines(metricsFile);
 const report = {
   file: metricsFile,
   rows: rows.length,
-  daily: summarize(rows),
+  aggregates: summarize(rows),
 };
 
 console.log(JSON.stringify(report, null, 2));

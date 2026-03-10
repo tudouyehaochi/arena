@@ -6,7 +6,8 @@ const longMemory = require('./lib/long-memory');
 const agentRegistry = require('./lib/agent-registry');
 const { startRealtimeListener } = require('./lib/realtime-listener');
 const { createAgentRuntime } = require('./lib/agent-runtime');
-const { createA2ARouter } = require('./lib/a2a-router');
+const { createA2ARouter, classifyIntent } = require('./lib/a2a-router');
+const aiIntel = require('./lib/ai-intel-pipeline');
 const { acquireRunnerLock, renewRunnerLock, releaseRunnerLock } = require('./lib/runner-lock');
 const { runAgentProcess } = require('./lib/runner-process');
 const { httpGetJson } = require('./lib/runner-http');
@@ -48,6 +49,10 @@ const DEGRADE_ENABLED = toBool(process.env.ARENA_DEGRADE_ENABLED, true);
 const CIRCUIT_BREAKER_ENABLED = toBool(process.env.ARENA_CIRCUIT_BREAKER_ENABLED, true);
 const CIRCUIT_ERROR_WINDOW = toPositiveInt(process.env.ARENA_CIRCUIT_ERROR_WINDOW, 5);
 const CIRCUIT_COOLDOWN_MS = toPositiveInt(process.env.ARENA_CIRCUIT_COOLDOWN_MS, 30000);
+const AI_INTEL_ENABLED = toBool(process.env.ARENA_AI_INTEL_ENABLED, false);
+const AI_INTEL_SOURCES = aiIntel.parseSourceConfig(process.env.ARENA_AI_INTEL_SOURCES || '');
+const AI_INTEL_WHITELIST = aiIntel.parseWhitelist(process.env.ARENA_AI_INTEL_WHITELIST || '');
+const AI_INTEL_INTERVAL_MS = toPositiveInt(process.env.ARENA_AI_INTEL_INTERVAL_MS, 60 * 60 * 1000);
 let currentAgentNames = [...AGENT_NAMES];
 let currentAgents = new Set(currentAgentNames);
 const PROMPT_MODE = String(process.env.ARENA_PROMPT_MODE || 'optimized').trim().toLowerCase() === 'legacy'
@@ -80,10 +85,20 @@ let wakeResolver = null;
 let lock = null;
 let renewTimer = null;
 let degradeLevel = 0;
-let lastRouteMeta = { candidateRoles: [], activeRoles: [], droppedRoles: 0, dropReasons: {}, retrievalCount: 0 };
+let lastRouteMeta = {
+  candidateRoles: [],
+  activeRoles: [],
+  droppedRoles: 0,
+  dropReasons: {},
+  reasonByRole: {},
+  executionOrder: [],
+  retrievalCount: 0,
+  retrievalType: '',
+};
 let longTermMemory = [];
 let roleMap = {};
 let modelRefreshTimer = null;
+let intelTimer = null;
 const circuit = new CircuitBreaker({
   enabled: CIRCUIT_BREAKER_ENABLED,
   errorWindow: CIRCUIT_ERROR_WINDOW,
@@ -134,8 +149,11 @@ function logInvoke(task, prompt, count, summaryOnly, meta = {}) {
     activeRoles: Array.isArray(meta.activeRoles) ? meta.activeRoles : [],
     droppedRoles: Number(meta.droppedRoles || 0),
     dropReasons: meta.dropReasons || {},
+    reasonByRole: meta.reasonByRole || {},
+    executionOrder: Array.isArray(meta.executionOrder) ? meta.executionOrder : [],
     degradeLevel: Number(meta.degradeLevel || 0),
     circuitOpen: circuitState.open,
+    retrievalType: String(meta.retrievalType || ''),
     route: {
       sourceSeq: task.sourceSeq,
       sourceFrom: task.sourceFrom,
@@ -146,21 +164,60 @@ function logInvoke(task, prompt, count, summaryOnly, meta = {}) {
   fs.appendFile(METRICS_LOG, JSON.stringify(row) + '\n', 'utf8', () => {});
 }
 
+function detectRetrievalType(recentMessages = []) {
+  const lastHuman = [...recentMessages].reverse().find((m) => !currentAgents.has(String(m?.from || '')));
+  const intents = classifyIntent(String(lastHuman?.content ?? lastHuman?.text ?? ''));
+  if (intents.includes('ai_news')) return { intents, type: 'news' };
+  if (intents.includes('planning')) return { intents, type: 'decision' };
+  if (intents.includes('implementation') || intents.includes('debug')) return { intents, type: 'procedure' };
+  return { intents, type: '' };
+}
+
+async function runDailyIntelTask() {
+  if (!AI_INTEL_ENABLED || AI_INTEL_SOURCES.length === 0) return;
+  const report = await aiIntel.runDailyIntelIngest({
+    roomId: ROOM_ID,
+    sources: AI_INTEL_SOURCES,
+    whitelistDomains: AI_INTEL_WHITELIST,
+  }).catch((err) => ({ error: err.message || 'intel_failed' }));
+  if (report && !report.skipped && !report.error) {
+    console.log(`[intel] stored=${report.storedCount} deduped=${report.dedupedCount} sources=${report.sourceCount}`);
+  }
+}
+
 async function invokeTask(task, recentMessages) {
   const baseMessages = (invokeCount > 0 && invokeCount % SESSION_REBUILD_EVERY === 0)
     ? recentMessages.slice(-2)
     : recentMessages;
   let promptMessages = selectPromptMessagesByDegrade(baseMessages, degradeLevel);
-  let prompt = buildPrompt(task.target, promptMessages, { sessionSummary, longTermMemory, promptMode: PROMPT_MODE });
+  let prompt = buildPrompt(task.target, promptMessages, {
+    sessionSummary,
+    longTermMemory,
+    promptMode: PROMPT_MODE,
+    activeRoleProfile: roleMap[task.target] || null,
+    promptBudgetChars: PROMPT_BUDGET_CHARS,
+  });
   let summaryOnly = promptMessages.length <= 1;
   if (PROMPT_BUDGET_CHARS > 0 && prompt.length > PROMPT_BUDGET_CHARS) {
     promptMessages = promptMessages.slice(-1);
-    prompt = buildPrompt(task.target, promptMessages, { sessionSummary, longTermMemory, promptMode: PROMPT_MODE });
+    prompt = buildPrompt(task.target, promptMessages, {
+      sessionSummary,
+      longTermMemory,
+      promptMode: PROMPT_MODE,
+      activeRoleProfile: roleMap[task.target] || null,
+      promptBudgetChars: PROMPT_BUDGET_CHARS,
+    });
     summaryOnly = true;
   }
   if (PROMPT_BUDGET_CHARS > 0 && prompt.length > PROMPT_BUDGET_CHARS) {
     promptMessages = [];
-    prompt = buildPrompt(task.target, promptMessages, { sessionSummary, longTermMemory, promptMode: PROMPT_MODE });
+    prompt = buildPrompt(task.target, promptMessages, {
+      sessionSummary,
+      longTermMemory,
+      promptMode: PROMPT_MODE,
+      activeRoleProfile: roleMap[task.target] || null,
+      promptBudgetChars: PROMPT_BUDGET_CHARS,
+    });
     summaryOnly = true;
   }
   if (PROMPT_BUDGET_CHARS > 0 && prompt.length > PROMPT_BUDGET_CHARS) {
@@ -184,7 +241,10 @@ async function invokeTask(task, recentMessages) {
     candidateRoles: lastRouteMeta.candidateRoles,
     activeRoles: lastRouteMeta.activeRoles,
     dropReasons: lastRouteMeta.dropReasons,
+    reasonByRole: lastRouteMeta.reasonByRole,
+    executionOrder: lastRouteMeta.executionOrder,
     retrievalCount: lastRouteMeta.retrievalCount,
+    retrievalType: lastRouteMeta.retrievalType,
     degradeLevel,
     circuitOpen: circuit.getState().open,
   }).catch(() => {});
@@ -207,7 +267,10 @@ async function invokeTask(task, recentMessages) {
       candidateRoles: lastRouteMeta.candidateRoles,
       activeRoles: lastRouteMeta.activeRoles,
       dropReasons: lastRouteMeta.dropReasons,
+      reasonByRole: lastRouteMeta.reasonByRole,
+      executionOrder: lastRouteMeta.executionOrder,
       retrievalCount: lastRouteMeta.retrievalCount,
+      retrievalType: lastRouteMeta.retrievalType,
       degradeLevel,
       circuitOpen: circuit.getState().open,
     }).catch(() => {});
@@ -234,25 +297,35 @@ async function pollOnce() {
     }));
     await longMemory.upsertMemoryBatch(ROOM_ID, candidates).catch(() => []);
     if (invokeCount % 20 === 0) await longMemory.pruneExpiredMemory(ROOM_ID, { limit: 100 }).catch(() => {});
-    longTermMemory = await longMemory.listTopMemory(ROOM_ID, { topK: RETRIEVAL_TOPK }).catch(() => []);
+    const retrieval = detectRetrievalType(recentMessages);
+    longTermMemory = await longMemory.listTopMemory(ROOM_ID, {
+      topK: RETRIEVAL_TOPK,
+      type: retrieval.type || undefined,
+    }).catch(() => []);
     sessionSummary.longTermMemory = longTermMemory.map((m) => ({
       type: m.type,
       summary: m.summary,
       qualityScore: m.qualityScore,
     }));
+    sessionSummary.retrievalIntent = retrieval.intents;
+    sessionSummary.retrievalType = retrieval.type || 'all';
     sessionSummary.retrievalCount = longTermMemory.length;
     await memory.saveSummary(sessionSummary, SUMMARY_PATH, `room:${ROOM_ID}:session:summary`);
   }
 
   const route = await router.ingest(recentMessages, {
     activationBudget: effectiveActivationBudget(ACTIVATION_BUDGET_PER_TURN, DEGRADE_ENABLED ? degradeLevel : 0),
+    roleProfiles: Object.values(roleMap),
   });
   lastRouteMeta = {
     candidateRoles: route.candidateRoles || [],
     activeRoles: route.activeRoles || [],
     droppedRoles: Array.isArray(route.dropped) ? route.dropped.length : 0,
     dropReasons: route.dropReasons || {},
+    reasonByRole: route.reasonByRole || {},
+    executionOrder: route.executionOrder || [],
     retrievalCount: Number(sessionSummary?.retrievalCount || 0),
+    retrievalType: String(sessionSummary?.retrievalType || ''),
   };
   if (route.cancelRequested && activeAbort) {
     console.log('[route] cancel requested by human');
@@ -267,7 +340,10 @@ async function pollOnce() {
     candidateRoles: route.candidateRoles || [],
     activeRoles: route.activeRoles || [],
     dropReasons: route.dropReasons || {},
+    reasonByRole: route.reasonByRole || {},
+    executionOrder: route.executionOrder || [],
     retrievalCount: Number(sessionSummary?.retrievalCount || 0),
+    retrievalType: String(sessionSummary?.retrievalType || ''),
     degradeLevel,
     circuitOpen: circuit.getState().open,
   }).catch(() => {});
@@ -336,6 +412,13 @@ async function main() {
     }));
   }, 5000);
   modelRefreshTimer.unref();
+  if (AI_INTEL_ENABLED && AI_INTEL_SOURCES.length > 0) {
+    await runDailyIntelTask();
+    intelTimer = setInterval(() => {
+      runDailyIntelTask().catch(() => {});
+    }, AI_INTEL_INTERVAL_MS);
+    intelTimer.unref();
+  }
   const listener = startRealtimeListener({
     apiUrl: API_URL,
     authHeader: AUTH_HEADER,
@@ -350,6 +433,7 @@ async function main() {
     if (activeAbort) activeAbort.abort();
     if (renewTimer) clearInterval(renewTimer);
     if (modelRefreshTimer) clearInterval(modelRefreshTimer);
+    if (intelTimer) clearInterval(intelTimer);
     await Promise.all(currentAgentNames.map((name) => {
       const rt = agentRuntime.ensureRole(name);
       return rt ? rt.cleanup().catch(() => {}) : Promise.resolve();

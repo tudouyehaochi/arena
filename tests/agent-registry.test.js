@@ -8,6 +8,7 @@ describe('agent-registry', () => {
     assert.ok(Array.isArray(roles));
     assert.ok(roles.some((r) => r.name === '清风'));
     assert.ok(roles.some((r) => r.name === '明月'));
+    assert.ok(roles.length >= 6);
   });
 
   it('replaces roles and updates enabled agent cache', async () => {
@@ -20,5 +21,14 @@ describe('agent-registry', () => {
     const refreshed = await registry.refreshRoleCache();
     assert.equal(refreshed.enabledAgentNames.includes('二郎神'), true);
     assert.equal(refreshed.enabledAgentNames.includes('明月'), false);
+  });
+
+  it('resolves mentions from role alias', async () => {
+    const roles = [
+      { name: '二郎神', alias: ['二郎', '真君'], enabled: true, status: 'idle' },
+      { name: '哪吒', alias: ['三太子'], enabled: true, status: 'idle' },
+    ];
+    const out = registry.resolveMentionTargets('@二郎 先排查，@三太子 去实现', roles);
+    assert.deepEqual(out, ['二郎神', '哪吒']);
   });
 });

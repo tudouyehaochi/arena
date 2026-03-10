@@ -370,7 +370,11 @@ body {
       const route = dash.route || {};
       const active = route.activeTask ? `${route.activeTask.target || ''} d${route.activeTask.depth || ''}` : '-';
       const dropped = (route.lastDropped || [])[0];
-      ui.route.textContent = `active: ${active}${dropped ? ` | dropped: ${dropped.reason}/${dropped.target}/d${dropped.depth}` : ''}`;
+      const activeRoles = Array.isArray(route.activeRoles) ? route.activeRoles.join(',') : '-';
+      const order = Array.isArray(route.executionOrder) ? route.executionOrder.join('>') : '-';
+      const reason = route.reasonByRole ? Object.entries(route.reasonByRole).map(([k,v])=>`${k}:${v}`).join(',') : '-';
+      const retrieval = `${route.retrievalType || 'all'}:${route.retrievalCount || 0}`;
+      ui.route.textContent = `active: ${active} | roles: ${activeRoles} | reason: ${reason} | order: ${order} | retrieval: ${retrieval}${dropped ? ` | dropped: ${dropped.reason}/${dropped.target}/d${dropped.depth}` : ''}`;
       ui.agents.innerHTML = (dash.agents || []).map(renderAgent).join('');
     } else {
       ui.agents.innerHTML = `<div class="meta">dashboard error: ${esc(dash.error || dashRes.status)}</div>`;

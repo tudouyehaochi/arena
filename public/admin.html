@@ -37,7 +37,7 @@
   </div>
   <div class="card">
     <div class="h"><strong>角色注册（Redis）</strong><span class="sp"></span><button id="save-roles" class="btn">保存角色</button></div>
-    <div class="k">格式: [{"name":"清风","model":"claude","avatar":"清","color":"#2dd4bf","enabled":true,"persona":"..."}]</div>
+    <div class="k">格式: [{"name":"清风","model":"claude","avatar":"清","color":"#2dd4bf","enabled":true,"status":"idle","priority":90,"alias":["qingfeng"],"skills":["planning"],"activationRules":[{"id":"plan","intents":["planning"],"keywords":["方案"],"priority":90}],"persona":"..."}]</div>
     <textarea id="roles-json" class="input" style="width:100%;min-height:160px;margin-top:8px;font-family:monospace"></textarea>
   </div>
   <div class="card"><div class="h"><strong>告警</strong></div><table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table></div>

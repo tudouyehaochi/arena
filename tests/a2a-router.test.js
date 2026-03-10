@@ -110,4 +110,53 @@ describe('a2a-router', () => {
     assert.equal(r.added.length, 1);
     assert.equal(r.added[0].target, '二郎神');
   });
+
+  it('activates by role alias mention', async () => {
+    const router = createA2ARouter({
+      roomId: 'default',
+      redisClient: fakeRedis(),
+      agents: ['清风', '明月', '二郎神'],
+      defaultAgent: '清风',
+    });
+    const r = await router.ingest(
+      [{ seq: 60, from: '镇元子', content: '@二郎 看下这个错误' }],
+      {
+        roleProfiles: [
+          { name: '清风', alias: [], enabled: true, status: 'idle' },
+          { name: '明月', alias: [], enabled: true, status: 'idle' },
+          { name: '二郎神', alias: ['二郎', '真君'], enabled: true, status: 'idle' },
+        ],
+      },
+    );
+    assert.equal(r.added.length, 1);
+    assert.equal(r.added[0].target, '二郎神');
+    assert.equal(r.reasonByRole['二郎神'], 'mention');
+  });
+
+  it('activates by rule when no explicit mention', async () => {
+    const router = createA2ARouter({
+      roomId: 'default',
+      redisClient: fakeRedis(),
+      agents: ['清风', '明月', '千里眼'],
+      defaultAgent: '清风',
+    });
+    const r = await router.ingest(
+      [{ seq: 70, from: '镇元子', content: '今天有AI模型发布资讯吗？' }],
+      {
+        roleProfiles: [
+          { name: '清风', activationRules: [], enabled: true, status: 'idle', priority: 90 },
+          {
+            name: '千里眼',
+            enabled: true,
+            status: 'idle',
+            priority: 70,
+            activationRules: [{ id: 'ai_news_watch', intents: ['ai_news'], keywords: ['资讯'], priority: 90 }],
+          },
+        ],
+      },
+    );
+    assert.equal(r.added.length, 1);
+    assert.equal(r.added[0].target, '千里眼');
+    assert.equal(r.reasonByRole['千里眼'], 'rule:ai_news_watch');
+  });
 });

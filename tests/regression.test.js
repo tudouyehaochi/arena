@@ -66,6 +66,34 @@ describe('prompt-builder regression', () => {
     assert.match(prompt, /memory=decision:决定采用分层检索策略/);
     assert.match(prompt, /procedure:先跑最小测试再扩展验证/);
   });
+
+  it('prompt injects active role persona when provided by registry', () => {
+    const prompt = buildPrompt('二郎神', [{ from: '镇元子', content: '帮我排查错误日志' }], {
+      promptMode: 'optimized',
+      activeRoleProfile: {
+        name: '二郎神',
+        persona: '执行果断，擅长故障定位。',
+        skills: ['incident-response', 'debugging'],
+      },
+    });
+    assert.match(prompt, /你是二郎神/);
+    assert.match(prompt, /执行果断，擅长故障定位/);
+    assert.match(prompt, /Skill: review-bug-risk/);
+  });
+
+  it('prompt budget trims skills before dropping core rules', () => {
+    const prompt = buildPrompt('清风', [{ from: '镇元子', content: '请做代码review并给出计划，然后实现' }], {
+      promptMode: 'optimized',
+      promptBudgetChars: 380,
+      activeRoleProfile: {
+        name: '清风',
+        skills: ['planning', 'code-review', 'implementation'],
+      },
+      sessionSummary: { status: 'ok', details: 'x'.repeat(500) },
+    });
+    assert.match(prompt, /## 行为铁律/);
+    assert.ok(!/Skill: coding-lite/.test(prompt) || !/Skill: planning/.test(prompt));
+  });
 });
 
 describe('mcp-file-tools default behavior', () => {
