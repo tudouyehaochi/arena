@@ -67,8 +67,9 @@
 .hint{font-size:12px;color:var(--muted)}
 .role-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 .role-meta .pill{font-size:11px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
-@media(max-width:900px){.workbench{grid-template-columns:1fr}.runtime-grid{grid-template-columns:1fr 1fr}.role-wrap{grid-template-columns:1fr}}
+@media(max-width:900px){.workbench{grid-template-columns:1fr}.runtime-grid{grid-template-columns:1fr 1fr}.role-wrap{grid-template-columns:1fr}.split{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -106,6 +107,10 @@
   <!-- Integrity banner + risk strip -->
   <div id="integrity"></div>
   <div id="risk-strip" class="risk-strip"></div>
+  <div class="card">
+    <div class="h"><strong>预制角色同步</strong><span id="preset-version" class="pill"></span><span class="sp"></span><button id="sync-preset-merge" class="btn">补齐缺失</button><button id="sync-preset-apply" class="btn danger">覆盖预制</button></div>
+    <div id="preset-sync-status" class="hint" style="margin-top:8px"></div>
+  </div>
 
   <!-- Two-column workbench -->
   <div class="workbench">
@@ -160,6 +165,43 @@
         <table class="tbl"><thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead><tbody id="backups"></tbody></table>
       </div>
     </div>
+  </div>
+
+  <div class="split">
+    <div class="card">
+      <div class="h"><strong>网络权限策略</strong><span class="sp"></span><button id="save-network-policy" class="btn">保存策略</button></div>
+      <div class="form-grid" style="margin-top:8px">
+        <label><input id="network-enabled" type="checkbox"> 全局允许网络访问</label>
+        <input id="network-role-name" class="input" placeholder="角色名（可选）">
+        <select id="network-role-mode" class="input"><option value="inherit">inherit</option><option value="allow">allow</option><option value="deny">deny</option></select>
+        <input id="network-skill-id" class="input" placeholder="skill id（可选）">
+        <select id="network-skill-mode" class="input"><option value="inherit">inherit</option><option value="allow">allow</option><option value="deny">deny</option></select>
+        <input id="network-domains" class="input wide" placeholder="允许域名，逗号分隔，如 github.com,*.openai.com">
+      </div>
+      <div id="network-policy-preview" class="hint" style="margin-top:8px"></div>
+    </div>
+    <div class="card">
+      <div class="h"><strong>资讯调度</strong><span class="sp"></span><button id="save-intel-schedule" class="btn">保存调度</button><button id="run-intel-now" class="btn">立即执行</button></div>
+      <div class="form-grid" style="margin-top:8px">
+        <label><input id="intel-enabled" type="checkbox"> 启用定时任务</label>
+        <input id="intel-cron" class="input" placeholder="cron，如 0 9 * * *">
+        <input id="intel-timezone" class="input" placeholder="Asia/Shanghai">
+        <input id="intel-room-id" class="input" placeholder="room id" value="default">
+        <input id="intel-sources" class="input wide" placeholder="资讯源 URL，逗号分隔">
+        <input id="intel-whitelist" class="input wide" placeholder="白名单域名，逗号分隔">
+      </div>
+      <div id="intel-schedule-status" class="hint" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="h"><strong>远程 Skill 安装</strong><span class="sp"></span><button id="install-remote-skill" class="btn">安装</button></div>
+    <div class="form-grid" style="margin-top:8px">
+      <input id="remote-skill-id" class="input" placeholder="skill id">
+      <select id="remote-skill-source-type" class="input"><option value="url">url</option><option value="repo">repo</option></select>
+      <input id="remote-skill-source-ref" class="input wide" placeholder="source ref (URL 或 repo 地址)">
+    </div>
+    <table class="tbl" style="margin-top:8px"><thead><tr><th>Skill</th><th>状态</th><th>来源</th><th>版本</th><th>操作</th></tr></thead><tbody id="installed-skills"></tbody></table>
   </div>
 </div>
 <script src="/js/admin-app.js"></script>

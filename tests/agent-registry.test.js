@@ -45,4 +45,17 @@ describe('agent-registry', () => {
     assert.equal(role.skillBindings[0].id, 'frontend-design');
     assert.equal(role.skills.includes('frontend-design'), true);
   });
+
+  it('syncs preset roles in merge_missing mode', async () => {
+    await registry.replaceRoles([
+      { name: '清风', model: 'claude', enabled: true, avatar: '清', color: '#2dd4bf' },
+    ]);
+    const out = await registry.syncPresetRoles('merge_missing');
+    assert.equal(out.mode, 'merge_missing');
+    assert.ok(out.changedCount >= 1);
+    const roles = await registry.listRoles();
+    assert.ok(roles.some((r) => r.name === '文曲星'));
+    const sync = await registry.getPresetSyncStatus();
+    assert.equal(sync.presetVersion, registry.getPresetVersion());
+  });
 });

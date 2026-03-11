@@ -29,11 +29,21 @@ const {
   handlePostAdminAgentModels,
   handleGetAdminRoles,
   handlePostAdminRoles,
+  handlePostAdminRolePresetSync,
+  handleGetAdminNetworkPolicy,
+  handlePostAdminNetworkPolicy,
+  handleGetAdminIntelSchedule,
+  handlePostAdminIntelSchedule,
+  handlePostAdminIntelScheduleRun,
+  handleGetAdminInstalledSkills,
+  handlePostAdminInstallSkill,
+  handlePostAdminSkillStatus,
   handlePostAdminBackupRun,
   handlePostAdminRestoreDrill,
   runIntegrityCheck,
   LAST_CHECK_KEY,
 } = require('./lib/admin-handlers');
+const intelScheduler = require('./lib/intel-scheduler');
 const alerts = require('./lib/alert-center');
 const BRANCH = currentBranch();
 const RUNTIME_ENV = inferEnvironment(process.env.ARENA_ENVIRONMENT);
@@ -94,6 +104,9 @@ const routes = {
   'GET /api/admin/bootstrap': handleGetAdminBootstrap,
   'GET /api/admin/agent-models': handleGetAdminAgentModels,
   'GET /api/admin/roles': handleGetAdminRoles,
+  'GET /api/admin/network-policy': handleGetAdminNetworkPolicy,
+  'GET /api/admin/intel-schedule': handleGetAdminIntelSchedule,
+  'GET /api/admin/skills/installed': handleGetAdminInstalledSkills,
 };
 function safeAsync(handler) {
   return (req, res, ...args) => {
@@ -128,6 +141,12 @@ const server = http.createServer((req, res) => {
   if (method === 'POST' && urlPath === '/api/admin/alerts/query') { safeAsync(handlePostAdminAlertsQuery)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/agent-models') { safeAsync(handlePostAdminAgentModels)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/roles') { safeAsync(handlePostAdminRoles)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/roles/sync') { safeAsync(handlePostAdminRolePresetSync)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/network-policy') { safeAsync(handlePostAdminNetworkPolicy)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/intel-schedule') { safeAsync(handlePostAdminIntelSchedule)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/intel-schedule/run') { safeAsync(handlePostAdminIntelScheduleRun)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/skills/install') { safeAsync(handlePostAdminInstallSkill)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/skills/status') { safeAsync(handlePostAdminSkillStatus)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/backup/run') { safeAsync(handlePostAdminBackupRun)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/restore/drill') { safeAsync(handlePostAdminRestoreDrill)(req, res); return; }
   if (method === 'GET' && (urlPath === '/api/agent-snapshot' || urlPath === '/api/callbacks/thread-context')) {
@@ -177,6 +196,7 @@ wss.on('connection', async (ws, req) => {
   });
 });
 let heartbeatTimer = null;
+let intelSchedulerTimer = null;
 async function start() {
   await redis.waitUntilReady(5000);
   await store.ensureRoom(DEFAULT_ROOM, { title: DEFAULT_ROOM, createdBy: 'system', boundInstanceId: INSTANCE_ID });
@@ -202,6 +222,14 @@ async function start() {
     runtimeRegistry.heartbeatInstance(INSTANCE_ID).catch(() => {});
   }, 30000);
   heartbeatTimer.unref();
+  intelSchedulerTimer = setInterval(async () => {
+    const config = await intelScheduler.getConfig().catch(() => null);
+    if (!config || !config.enabled) return;
+    const status = await intelScheduler.getStatus().catch(() => null);
+    if (!intelScheduler.shouldRunNow(config, status, new Date())) return;
+    await intelScheduler.runOnce(config, Date.now(), false).catch(() => {});
+  }, 60 * 1000);
+  intelSchedulerTimer.unref();
   server.listen(PORT, BIND_HOST, () => {
     const creds = auth.getCredentials();
     const credsFile = process.env.ARENA_CREDENTIALS_FILE;
@@ -224,6 +252,7 @@ async function start() {
 }
 async function shutdown() {
   if (heartbeatTimer) clearInterval(heartbeatTimer);
+  if (intelSchedulerTimer) clearInterval(intelSchedulerTimer);
   await runtimeRegistry.stopInstance(INSTANCE_ID);
   await redis.disconnect();
   process.exit(0);

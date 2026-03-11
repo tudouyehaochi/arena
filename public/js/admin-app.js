@@ -7,7 +7,7 @@ const fmtBytes = (n) => { const v = Number(n||0); return v<1024?v+' B':v<1048576
 const levelClass = (l) => l==='CRITICAL'?'bad':l==='WARN'?'warn':'ok';
 const showAdmin = (on) => { $('login-panel').className=on?'login-center hide':'login-center'; $('admin-panel').className=on?'wrap':'wrap hide'; };
 const PRIORITIES=['high','medium','low'];
-let agentModels={}, allowedModels=['claude','codex'], roles=[], skills=[], activeRoleIndex=0, lastAlerts=[], lastOverview={ runtime:{}, integrity:null };
+let agentModels={}, allowedModels=['claude','codex'], roles=[], skills=[], installedSkills=[], networkPolicyState={networkEnabled:false,roleModes:{},skillModes:{},allowedDomains:[]}, intelScheduleState={config:{},status:null}, activeRoleIndex=0, lastAlerts=[], lastOverview={ runtime:{}, integrity:null };
 
 async function api(path,opt={}){const res=await fetch(path,{...opt,headers:{...authHeaders(),...(opt.headers||{})}});return{res,data:await res.json().catch(()=>({}))}}
 function normalizeRole(role={}){
@@ -64,12 +64,42 @@ function renderAlerts(items){
   renderRiskStrip(lastOverview);
   document.querySelectorAll('[data-ack]').forEach(b=>b.onclick=async()=>{const r=await api('/api/admin/alerts/ack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.ack,actor:$('username').value||'admin'})});if(!r.res.ok){alert('确认失败');return;}queryAlerts().catch(()=>{});});
 }
+function renderPresetStatus(rolePreset){
+  const pv=rolePreset?.presetVersion||'', ls=rolePreset?.lastSync||null;
+  if($('preset-version')) $('preset-version').textContent=pv?`preset ${pv}`:'preset -';
+  if(!$('preset-sync-status')) return;
+  $('preset-sync-status').textContent=!ls?'尚未同步':`最近同步: ${ls.syncedAt||''} | mode=${ls.mode||''} | changed=${ls.changedCount||0}`;
+}
+function renderNetworkPolicy(policy){
+  networkPolicyState={networkEnabled:Boolean(policy?.networkEnabled),roleModes:{...(policy?.roleModes||{})},skillModes:{...(policy?.skillModes||{})},allowedDomains:Array.isArray(policy?.allowedDomains)?policy.allowedDomains:[]};
+  if($('network-enabled')) $('network-enabled').checked=networkPolicyState.networkEnabled;
+  if($('network-domains')) $('network-domains').value=(networkPolicyState.allowedDomains||[]).join(', ');
+  if($('network-policy-preview')) $('network-policy-preview').textContent=`global=${networkPolicyState.networkEnabled?'allow':'deny'} | role rules=${Object.keys(networkPolicyState.roleModes).length} | skill rules=${Object.keys(networkPolicyState.skillModes).length}`;
+}
+function renderIntelSchedule(intelSchedule){
+  intelScheduleState=intelSchedule||{config:{},status:null};
+  const cfg=intelScheduleState.config||{}, st=intelScheduleState.status||null;
+  if($('intel-enabled')) $('intel-enabled').checked=Boolean(cfg.enabled);
+  if($('intel-cron')) $('intel-cron').value=cfg.cron||'0 9 * * *';
+  if($('intel-timezone')) $('intel-timezone').value=cfg.timezone||'Asia/Shanghai';
+  if($('intel-room-id')) $('intel-room-id').value=cfg.roomId||'default';
+  if($('intel-sources')) $('intel-sources').value=Array.isArray(cfg.sources)?cfg.sources.join(', '):'';
+  if($('intel-whitelist')) $('intel-whitelist').value=Array.isArray(cfg.whitelistDomains)?cfg.whitelistDomains.join(', '):'';
+  if($('intel-schedule-status')) $('intel-schedule-status').textContent=st?`last=${st.lastRunAt||''} | status=${st.lastStatus||''} | stored=${st.storedCount||0} | error=${st.lastError||'-'}`:'尚无执行记录';
+}
+function renderInstalledSkills(items){
+  installedSkills=Array.isArray(items)?items:[];
+  if(!$('installed-skills')) return;
+  $('installed-skills').innerHTML=installedSkills.map(it=>`<tr><td>${esc(it.skillId)}</td><td>${esc(it.status||'')}</td><td>${esc(it.sourceRef||'')}</td><td>${esc(it.version||'')}</td><td><button class="btn" data-skill-action="enable" data-skill-id="${esc(it.skillId)}">启用</button><button class="btn" data-skill-action="disable" data-skill-id="${esc(it.skillId)}">停用</button><button class="btn danger" data-skill-action="rollback" data-skill-id="${esc(it.skillId)}">回滚</button></td></tr>`).join('');
+  document.querySelectorAll('[data-skill-action]').forEach(btn=>btn.onclick=async()=>{const action=btn.dataset.skillAction,skillId=btn.dataset.skillId;const{res,data}=await api('/api/admin/skills/status',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skillId,action,actor:$('username').value||'admin'})});if(!res.ok){alert('更新 skill 状态失败: '+(data.error||res.status));return;}load().catch(()=>{});});
+}
 function renderBootstrap(data){
   $('stamp').textContent='更新时间: '+new Date().toLocaleString();
   lastOverview={ runtime:data.runtime||{}, integrity:data.integrity||null };
   renderRuntimeOverview(data);renderIntegrityBanner(data.integrity);renderAgentModels(data.agentModels||{},data.allowedModels||['claude','codex']);
   skills=Array.isArray(data.skills)?data.skills:[];roles=(data.roles||[]).map(normalizeRole).sort((a,b)=>Number(b.priority||0)-Number(a.priority||0));activeRoleIndex=0;
   renderRoleList();renderRoleEditor();renderAlerts(data.alerts||[]);renderRiskStrip(data);
+  renderPresetStatus(data.rolePreset||null);renderNetworkPolicy(data.networkPolicy||{});renderIntelSchedule(data.intelSchedule||{config:{},status:null});renderInstalledSkills(data.installedSkills||[]);
   $('backups').innerHTML=(data.backups||[]).map(b=>`<tr><td>${esc(b.name)}</td><td>${esc(fmtBytes(b.size))}</td><td>${esc(b.mtime)}</td></tr>`).join('');
   const bt=data.backupTask,rd=data.restoreDrill,sp=[];if(bt)sp.push(`backup: ${bt.status} ${bt.finishedAt||''}`);if(rd)sp.push(`restore: ${rd.status} ${rd.finishedAt||''}`);$('backup-status').textContent=sp.join(' | ');
 }
@@ -81,6 +111,8 @@ $('logout').onclick=async()=>{await api('/api/admin/logout',{method:'POST'});sho
 $('refresh').onclick=()=>load().catch(e=>alert(e.message));
 $('check').onclick=async()=>{const{res,data}=await api('/api/admin/check',{method:'POST'});if(!res.ok){alert('校验失败: '+(data.error||res.status));return;}load().catch(()=>{});};
 $('alert-search').onclick=()=>queryAlerts().catch(()=>{});
+$('sync-preset-merge').onclick=async()=>{const{res,data}=await api('/api/admin/roles/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'merge_missing'})});if(!res.ok){alert('同步失败: '+(data.error||res.status));return;}load().catch(()=>{});};
+$('sync-preset-apply').onclick=async()=>{if(!confirm('覆盖预制会重写同名角色配置，确认继续？'))return;const{res,data}=await api('/api/admin/roles/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:'apply_all'})});if(!res.ok){alert('同步失败: '+(data.error||res.status));return;}load().catch(()=>{});};
 $('save-agent-models').onclick=async()=>{const{res,data}=await api('/api/admin/agent-models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({models:agentModels})});if(!res.ok){alert('保存失败: '+(data.error||res.status));return;}load().catch(()=>{});alert('已保存，runner 会在几秒内自动刷新配置');};
 $('add-role').onclick=()=>{applyFormToRole();roles.push(normalizeRole({name:`新角色${roles.length+1}`,model:'claude',status:'idle',priority:50,activationMode:'mention'}));activeRoleIndex=roles.length-1;renderRoleList();renderRoleEditor();};
 $('save-roles').onclick=async()=>{applyFormToRole();const payload=roles.map(r=>({...r,enabled:r.status!=='muted',skills:(r.skillBindings||[]).map(s=>s.id),activationRules:[]}));const{res,data}=await api('/api/admin/roles',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({roles:payload})});if(!res.ok){alert('保存角色失败: '+(data.error||res.status));return;}load().catch(()=>{});alert('角色已保存，runner 将自动热加载');};
@@ -90,5 +122,9 @@ $('skill-filter').oninput=()=>renderSkillList($('skill-filter').value);
 document.addEventListener('change',e=>{const t=e.target;if(!t||typeof t.getAttribute!=='function')return;if(t.getAttribute('data-skill-check')!==null||t.getAttribute('data-skill-priority')!==null){applyFormToRole();renderRoleList();}});
 $('run-backup').onclick=async()=>{const{res,data}=await api('/api/admin/backup/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:$('backup-kind').value})});if(!res.ok){alert('备份失败: '+(data.error||data.status||res.status));return;}load().catch(()=>{});};
 $('run-restore-drill').onclick=async()=>{if(!confirm('恢复演练会覆盖当前 dev Redis 快照，确认继续？'))return;const{res,data}=await api('/api/admin/restore/drill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});if(!res.ok){alert('恢复演练失败: '+(data.error||data.status||res.status));return;}load().catch(()=>{});};
+$('save-network-policy').onclick=async()=>{const rn=$('network-role-name').value.trim(),rm=$('network-role-mode').value,si=$('network-skill-id').value.trim(),sm=$('network-skill-mode').value,roleModes={...(networkPolicyState.roleModes||{})},skillModes={...(networkPolicyState.skillModes||{})};if(rn)roleModes[rn]=rm;if(si)skillModes[si]=sm;const payload={policy:{networkEnabled:$('network-enabled').checked,roleModes,skillModes,allowedDomains:$('network-domains').value.split(',').map(s=>s.trim()).filter(Boolean)}};const{res,data}=await api('/api/admin/network-policy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});if(!res.ok){alert('保存策略失败: '+(data.error||res.status));return;}load().catch(()=>{});};
+$('save-intel-schedule').onclick=async()=>{const config={enabled:$('intel-enabled').checked,cron:$('intel-cron').value.trim()||'0 9 * * *',timezone:$('intel-timezone').value.trim()||'Asia/Shanghai',roomId:$('intel-room-id').value.trim()||'default',sources:$('intel-sources').value.split(',').map(s=>s.trim()).filter(Boolean),whitelistDomains:$('intel-whitelist').value.split(',').map(s=>s.trim()).filter(Boolean)};const{res,data}=await api('/api/admin/intel-schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({config})});if(!res.ok){alert('保存调度失败: '+(data.error||res.status));return;}load().catch(()=>{});};
+$('run-intel-now').onclick=async()=>{const{res,data}=await api('/api/admin/intel-schedule/run',{method:'POST'});if(!res.ok){alert('执行失败: '+(data.error||res.status));return;}load().catch(()=>{});};
+$('install-remote-skill').onclick=async()=>{const skillId=$('remote-skill-id').value.trim(),sourceRef=$('remote-skill-source-ref').value.trim();if(!skillId||!sourceRef){alert('请填写 skill id 和 source ref');return;}const{res,data}=await api('/api/admin/skills/install',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skillId,sourceType:$('remote-skill-source-type').value,sourceRef,installedBy:$('username').value||'admin'})});if(!res.ok){alert('安装失败: '+(data.error||res.status));return;}load().catch(()=>{});};
 load().catch(()=>showAdmin(false));
 })();
