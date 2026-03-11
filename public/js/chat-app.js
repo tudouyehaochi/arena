@@ -53,14 +53,23 @@
 
   function uline(m) {
     const usage = m.usage || null;
+    const skillUsage = m.skillUsage || null;
     const role = getRole(m.from);
     const model = role.model || '';
-    if (!model && !usage) return '';
+    if (!model && !usage && !skillUsage) return '';
     const modelPart = model ? `model ${model}` : '';
     const tokenPart = usage
       ? `tokens in ${usage.inputTokens || 0} / out ${usage.outputTokens || 0}${usage.cachedInputTokens ? ` / cached ${usage.cachedInputTokens}` : ''}`
       : '';
-    return `<div class="u">${[modelPart, tokenPart].filter(Boolean).join(' · ')}</div>`;
+    const used = Array.isArray(skillUsage?.used) ? skillUsage.used : [];
+    const dropped = Array.isArray(skillUsage?.dropped) ? skillUsage.dropped : [];
+    const usedPart = used.length > 0
+      ? `skills ${used.map((s) => `${s.id}${s.priority ? `(${s.priority})` : ''}`).join(', ')}`
+      : '';
+    const droppedPart = dropped.length > 0
+      ? `trimmed ${dropped.map((s) => `${s.id}${s.priority ? `(${s.priority})` : ''}`).join(', ')}`
+      : '';
+    return `<div class="u">${[modelPart, tokenPart, usedPart, droppedPart].filter(Boolean).join(' · ')}</div>`;
   }
 
   function isNearBottom() {

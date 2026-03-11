@@ -1,6 +1,6 @@
 const path = require('path');
 const fs = require('fs');
-const { buildPrompt } = require('./lib/prompt-builder');
+const { buildPromptPackage } = require('./lib/prompt-builder');
 const memory = require('./lib/session-memory');
 const longMemory = require('./lib/long-memory');
 const agentRegistry = require('./lib/agent-registry');
@@ -10,7 +10,7 @@ const { createA2ARouter, classifyIntent } = require('./lib/a2a-router');
 const aiIntel = require('./lib/ai-intel-pipeline');
 const { acquireRunnerLock, renewRunnerLock, releaseRunnerLock } = require('./lib/runner-lock');
 const { runAgentProcess } = require('./lib/runner-process');
-const { httpGetJson } = require('./lib/runner-http');
+const { httpGetJson, httpPostJson } = require('./lib/runner-http');
 const { writeRouteState } = require('./lib/runner-route-state');
 const { currentBranch } = require('./lib/env');
 const { inferEnvironment, resolvePort } = require('./lib/runtime-config');
@@ -190,34 +190,40 @@ async function invokeTask(task, recentMessages) {
     ? recentMessages.slice(-2)
     : recentMessages;
   let promptMessages = selectPromptMessagesByDegrade(baseMessages, degradeLevel);
-  let prompt = buildPrompt(task.target, promptMessages, {
+  let promptPackage = buildPromptPackage(task.target, promptMessages, {
     sessionSummary,
     longTermMemory,
     promptMode: PROMPT_MODE,
     activeRoleProfile: roleMap[task.target] || null,
     promptBudgetChars: PROMPT_BUDGET_CHARS,
   });
+  let prompt = promptPackage.prompt;
+  let skillUsage = promptPackage.skillUsage || { used: [], dropped: [] };
   let summaryOnly = promptMessages.length <= 1;
   if (PROMPT_BUDGET_CHARS > 0 && prompt.length > PROMPT_BUDGET_CHARS) {
     promptMessages = promptMessages.slice(-1);
-    prompt = buildPrompt(task.target, promptMessages, {
+    promptPackage = buildPromptPackage(task.target, promptMessages, {
       sessionSummary,
       longTermMemory,
       promptMode: PROMPT_MODE,
       activeRoleProfile: roleMap[task.target] || null,
       promptBudgetChars: PROMPT_BUDGET_CHARS,
     });
+    prompt = promptPackage.prompt;
+    skillUsage = promptPackage.skillUsage || { used: [], dropped: [] };
     summaryOnly = true;
   }
   if (PROMPT_BUDGET_CHARS > 0 && prompt.length > PROMPT_BUDGET_CHARS) {
     promptMessages = [];
-    prompt = buildPrompt(task.target, promptMessages, {
+    promptPackage = buildPromptPackage(task.target, promptMessages, {
       sessionSummary,
       longTermMemory,
       promptMode: PROMPT_MODE,
       activeRoleProfile: roleMap[task.target] || null,
       promptBudgetChars: PROMPT_BUDGET_CHARS,
     });
+    prompt = promptPackage.prompt;
+    skillUsage = promptPackage.skillUsage || { used: [], dropped: [] };
     summaryOnly = true;
   }
   if (PROMPT_BUDGET_CHARS > 0 && prompt.length > PROMPT_BUDGET_CHARS) {
@@ -255,6 +261,11 @@ async function invokeTask(task, recentMessages) {
       `${task.target} (${resolved.model === 'claude' ? 'Claude' : 'Codex'})`,
       controller.signal,
     );
+    await httpPostJson(`${API_URL}/api/internal/skill-usage`, AUTH_HEADER, {
+      roomId: ROOM_ID,
+      agent: task.target,
+      skillUsage,
+    }, REQUEST_TIMEOUT_MS).catch(() => {});
     invokeCount++;
     router.noteAgentInvocation(task.target, task.depth);
   } finally {

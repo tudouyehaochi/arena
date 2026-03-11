@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
-const { buildPrompt, getPromptMode } = require('../lib/prompt-builder');
+const { buildPrompt, buildPromptPackage, getPromptMode } = require('../lib/prompt-builder');
 const { registerFileTools } = require('../lib/mcp-file-tools');
 
 describe('prompt-builder regression', () => {
@@ -93,6 +93,23 @@ describe('prompt-builder regression', () => {
     });
     assert.match(prompt, /## 行为铁律/);
     assert.ok(!/Skill: coding-lite/.test(prompt) || !/Skill: planning/.test(prompt));
+  });
+
+  it('prompt package returns skill usage with priority', () => {
+    const out = buildPromptPackage('文曲星', [{ from: '镇元子', content: '请优化一下手机端页面体验' }], {
+      promptMode: 'optimized',
+      activeRoleProfile: {
+        name: '文曲星',
+        skillBindings: [
+          { id: 'frontend-design', priority: 'high' },
+          { id: 'summarize', priority: 'low' },
+        ],
+      },
+      promptBudgetChars: 0,
+    });
+    assert.ok(out.prompt.includes('Skill: frontend-design'));
+    assert.ok(Array.isArray(out.skillUsage.used));
+    assert.ok(out.skillUsage.used.some((s) => s.id === 'frontend-design' && s.priority === 'high'));
   });
 });
 

@@ -28,7 +28,12 @@ describe('a2a-router', () => {
 
   it('human message without mention routes to default agent', async () => {
     const router = createA2ARouter({ roomId: 'default', redisClient: fakeRedis(), agents: ['清风', '明月'], defaultAgent: '清风' });
-    const r = await router.ingest([{ seq: 1, from: '镇元子', content: '帮我看下这个报错' }]);
+    const r = await router.ingest([{ seq: 1, from: '镇元子', content: '帮我看下这个报错' }], {
+      roleProfiles: [
+        { name: '清风', activationMode: 'mention', enabled: true, status: 'idle', priority: 90 },
+        { name: '明月', activationMode: 'mention', enabled: true, status: 'idle', priority: 85 },
+      ],
+    });
     assert.equal(r.added.length, 1);
     assert.equal(r.added[0].target, '清风');
     assert.equal(r.added[0].depth, 1);
@@ -133,7 +138,7 @@ describe('a2a-router', () => {
     assert.equal(r.reasonByRole['二郎神'], 'mention');
   });
 
-  it('activates by rule when no explicit mention', async () => {
+  it('activates always_on roles when no explicit mention', async () => {
     const router = createA2ARouter({
       roomId: 'default',
       redisClient: fakeRedis(),
@@ -144,19 +149,19 @@ describe('a2a-router', () => {
       [{ seq: 70, from: '镇元子', content: '今天有AI模型发布资讯吗？' }],
       {
         roleProfiles: [
-          { name: '清风', activationRules: [], enabled: true, status: 'idle', priority: 90 },
+          { name: '清风', activationMode: 'mention', enabled: true, status: 'idle', priority: 90 },
           {
             name: '千里眼',
             enabled: true,
             status: 'idle',
             priority: 70,
-            activationRules: [{ id: 'ai_news_watch', intents: ['ai_news'], keywords: ['资讯'], priority: 90 }],
+            activationMode: 'always_on',
           },
         ],
       },
     );
     assert.equal(r.added.length, 1);
     assert.equal(r.added[0].target, '千里眼');
-    assert.equal(r.reasonByRole['千里眼'], 'rule:ai_news_watch');
+    assert.equal(r.reasonByRole['千里眼'], 'always_on');
   });
 });

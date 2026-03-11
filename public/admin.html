@@ -9,10 +9,22 @@
 .wrap{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
 .h{display:flex;align-items:center;gap:8px}.sp{margin-left:auto}.btn{border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
-.input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:220px}
+.btn.primary{background:#0f172a;color:#fff;border-color:#0f172a}.btn.danger{border-color:#ef4444;color:#ef4444}
+.input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:220px;background:#fff}
 .grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}.kv{border:1px solid var(--line);border-radius:8px;padding:8px}.k{font-size:12px;color:var(--muted)}.v{font-weight:700}
 .tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;font-size:13px}
 .bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--ok)}.hide{display:none}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;font-size:12px;color:#334155}
+.role-wrap{display:grid;grid-template-columns:300px 1fr;gap:10px}
+.role-list{display:grid;gap:8px;max-height:420px;overflow:auto}
+.role-item{border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer;background:#fff}
+.role-item.active{border-color:#0f172a;background:#f8fafc}
+.role-editor{display:grid;gap:8px}
+.form-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px}
+.form-grid .wide{grid-column:span 3}
+.skills{display:grid;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px}
+.skill-item{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px;align-items:center}
+.hint{font-size:12px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -39,13 +51,46 @@
   </div>
 
   <div class="card">
-    <div class="h"><strong>角色管理</strong><span class="sp"></span><button id="save-roles" class="btn">保存角色</button></div>
-    <div class="k">格式: [{"name":"清风","model":"claude","avatar":"清","color":"#2dd4bf","enabled":true,"status":"idle","priority":90,"alias":["qingfeng"],"skills":["planning"],"activationRules":[{"id":"plan","intents":["planning"],"keywords":["方案"],"priority":90}],"persona":"..."}]</div>
-    <textarea id="roles-json" class="input" style="width:100%;min-height:180px;margin-top:8px;font-family:monospace"></textarea>
+    <div class="h"><strong>角色管理</strong><span class="pill">mention / 持续在线</span><span class="sp"></span><button id="add-role" class="btn">新增角色</button><button id="save-roles" class="btn primary">保存角色</button></div>
+    <div class="role-wrap" style="margin-top:8px">
+      <div class="role-list" id="role-list"></div>
+      <div class="role-editor">
+        <div class="form-grid">
+          <input id="role-name" class="input" placeholder="角色名（如 文曲星）">
+          <input id="role-avatar" class="input" placeholder="头像字（1-2字）">
+          <input id="role-color" class="input" placeholder="#14b8a6">
+          <input id="role-alias" class="input wide" placeholder="别名，逗号分隔。示例: 文曲,ux">
+          <select id="role-model" class="input"><option value="claude">claude</option><option value="codex">codex</option></select>
+          <select id="role-status" class="input"><option value="idle">idle</option><option value="active">active</option><option value="muted">muted</option></select>
+          <input id="role-priority" class="input" type="number" min="1" max="100" value="80">
+          <select id="role-activation-mode" class="input">
+            <option value="mention">@名字触发（mention）</option>
+            <option value="always_on">持续在线互动（always_on）</option>
+          </select>
+        </div>
+        <div class="form-grid">
+          <input id="persona-position" class="input wide" placeholder="定位：这个角色负责什么">
+          <input id="persona-style" class="input wide" placeholder="风格：语气和协作风格">
+          <input id="persona-strength" class="input wide" placeholder="擅长：最拿手的能力">
+          <input id="persona-boundary" class="input wide" placeholder="边界：不该做什么 / 何时求助">
+        </div>
+        <div class="hint">Persona 会自动拼接为一句完整人设，适合非技术同学直接填写。</div>
+        <div class="h"><strong>技能绑定</strong><span class="sp"></span><input id="skill-filter" class="input" placeholder="筛选 skill"></div>
+        <div id="skill-list" class="skills"></div>
+        <div class="hint">优先级建议：high 适合核心技能，medium 适合补充技能，low 会优先被预算裁剪。</div>
+      </div>
+    </div>
   </div>
 
-  <div class="card"><div class="h"><strong>告警审计</strong></div><table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table></div>
-  <div class="card"><div class="h"><strong>备份</strong></div><table class="tbl"><thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead><tbody id="backups"></tbody></table></div>
+  <div class="card">
+    <div class="h"><strong>告警审计</strong><span class="sp"></span><select id="alert-acked" class="input"><option value="">全部</option><option value="false">未确认</option><option value="true">已确认</option></select><input id="alert-q" class="input" placeholder="搜索事件/详情"><button id="alert-search" class="btn">查询</button></div>
+    <table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>确认人</th><th>确认时间</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table>
+  </div>
+  <div class="card">
+    <div class="h"><strong>备份</strong><span class="sp"></span><select id="backup-kind" class="input"><option value="hourly">hourly</option><option value="daily">daily</option></select><button id="run-backup" class="btn">手动备份</button><button id="run-restore-drill" class="btn danger">恢复演练(dev)</button></div>
+    <div id="backup-status" class="hint" style="margin:6px 0"></div>
+    <table class="tbl"><thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead><tbody id="backups"></tbody></table>
+  </div>
 </div>
 <script src="/js/admin-app.js"></script>
 </body>

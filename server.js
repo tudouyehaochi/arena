@@ -14,7 +14,7 @@ const { handlePostMessage, handleGetSnapshot, handleGetWsToken, jsonResponse } =
 const { handlePostAgentContext, handleGetAgentContext } = require('./lib/agent-context-handlers');
 const { handleGetDashboard } = require('./lib/dashboard-handlers');
 const { handleGetRooms, handlePostRooms, handleDeleteRoom } = require('./lib/room-handlers');
-const { handlePostUsage } = require('./lib/usage-handlers');
+const { handlePostUsage, handlePostSkillUsage } = require('./lib/usage-handlers');
 const { servePublicFile, servePublicPath } = require('./lib/static-serve');
 const {
   handleGetAdmin,
@@ -22,12 +22,15 @@ const {
   handleGetAdminBootstrap,
   handlePostAdminCheck,
   handlePostAdminAlertAck,
+  handlePostAdminAlertsQuery,
   handlePostAdminLogin,
   handlePostAdminLogout,
   handleGetAdminAgentModels,
   handlePostAdminAgentModels,
   handleGetAdminRoles,
   handlePostAdminRoles,
+  handlePostAdminBackupRun,
+  handlePostAdminRestoreDrill,
   runIntegrityCheck,
   LAST_CHECK_KEY,
 } = require('./lib/admin-handlers');
@@ -117,12 +120,16 @@ const server = http.createServer((req, res) => {
   if (method === 'POST' && urlPath === '/api/rooms') { safeAsync(handlePostRooms)(req, res, INSTANCE_ID); return; }
   if (method === 'DELETE' && urlPath === '/api/rooms') { safeAsync(handleDeleteRoom)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/internal/usage') { safeAsync(handlePostUsage)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/internal/skill-usage') { safeAsync(handlePostSkillUsage)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/login') { safeAsync(handlePostAdminLogin)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/logout') { safeAsync(handlePostAdminLogout)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/check') { safeAsync(handlePostAdminCheck)(req, res, { instanceId: INSTANCE_ID, runtimeEnv: RUNTIME_ENV, port: PORT }); return; }
   if (method === 'POST' && urlPath === '/api/admin/alerts/ack') { safeAsync(handlePostAdminAlertAck)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/alerts/query') { safeAsync(handlePostAdminAlertsQuery)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/agent-models') { safeAsync(handlePostAdminAgentModels)(req, res); return; }
   if (method === 'POST' && urlPath === '/api/admin/roles') { safeAsync(handlePostAdminRoles)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/backup/run') { safeAsync(handlePostAdminBackupRun)(req, res); return; }
+  if (method === 'POST' && urlPath === '/api/admin/restore/drill') { safeAsync(handlePostAdminRestoreDrill)(req, res); return; }
   if (method === 'GET' && (urlPath === '/api/agent-snapshot' || urlPath === '/api/callbacks/thread-context')) {
     safeAsync(handleGetSnapshot)(req, res, PORT); return;
   }

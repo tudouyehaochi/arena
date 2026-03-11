@@ -8,6 +8,7 @@ describe('agent-registry', () => {
     assert.ok(Array.isArray(roles));
     assert.ok(roles.some((r) => r.name === '清风'));
     assert.ok(roles.some((r) => r.name === '明月'));
+    assert.ok(roles.some((r) => r.name === '文曲星'));
     assert.ok(roles.length >= 6);
   });
 
@@ -30,5 +31,18 @@ describe('agent-registry', () => {
     ];
     const out = registry.resolveMentionTargets('@二郎 先排查，@三太子 去实现', roles);
     assert.deepEqual(out, ['二郎神', '哪吒']);
+  });
+
+  it('normalizes activation mode and skill bindings', () => {
+    const role = registry.normalizeRole({
+      name: '测试角色',
+      activationMode: 'always_on',
+      skills: ['planning'],
+      skillBindings: [{ id: 'frontend-design', priority: 'high' }],
+    });
+    assert.equal(role.activationMode, 'always_on');
+    assert.ok(Array.isArray(role.skillBindings));
+    assert.equal(role.skillBindings[0].id, 'frontend-design');
+    assert.equal(role.skills.includes('frontend-design'), true);
   });
 });

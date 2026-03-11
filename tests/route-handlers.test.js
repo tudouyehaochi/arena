@@ -209,6 +209,7 @@ describe('route-handlers auth regression', () => {
     const data = JSON.parse(res.body);
     assert.ok(data.runtime);
     assert.ok(Array.isArray(data.roles));
+    assert.ok(Array.isArray(data.skills));
     assert.ok(data.agentModels && typeof data.agentModels === 'object');
     process.env.ARENA_ADMIN_KEY = prev;
   });
