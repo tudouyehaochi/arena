@@ -9,7 +9,7 @@
     roomQ: document.getElementById('room-q'),
     rooms: document.getElementById('rooms'),
     stats: document.getElementById('stats'),
-    route: document.getElementById('route'),
+    opsStrip: document.getElementById('ops-strip'),
     agents: document.getElementById('agents'),
   };
   let refreshTimer = null;
@@ -31,9 +31,82 @@
     });
   }
 
+  function pillClass(status) {
+    if (status === 'active') return 'pill active';
+    if (status === 'muted') return 'pill muted';
+    return 'pill idle';
+  }
+
   function renderAgent(a) {
     const usage = a.usage || {};
-    return `<div class="agent"><div class="row"><div class="agent-avatar" style="background:${a.color || '#64748b'}">${esc(a.avatar || a.name[0])}</div><div><div class="name">${esc(a.name)}</div><div class="sub">${esc(a.model || 'unknown')}</div></div><span class="pill">${esc(a.status || 'idle')}</span></div><div class="line">调用: ${usage.invokeCount || 0} 次 · 平均输入: ${usage.avgInputTokens || 0} tokens</div><div class="line">消息: ${a.messageCount || 0} · 最近活跃: ${fmt(a.lastSeenAt || usage.lastInvokeAt)}</div></div>`;
+    return `<div class="agent">
+      <div class="row">
+        <div class="agent-avatar" style="background:${a.color || '#64748b'}">${esc(a.avatar || a.name[0])}</div>
+        <div><div class="name">${esc(a.name)}</div><div class="sub">${esc(a.model || 'unknown')}</div></div>
+        <span class="${pillClass(a.status)}">${esc(a.status || 'idle')}</span>
+      </div>
+      <div class="line">调用 ${usage.invokeCount || 0} 次 · 平均输入 ${usage.avgInputTokens || 0} tokens</div>
+      <div class="line">消息 ${a.messageCount || 0} · 最近活跃 ${fmt(a.lastSeenAt || usage.lastInvokeAt)}</div>
+    </div>`;
+  }
+
+  function renderMetric(label, value, desc) {
+    return `<div class="metric"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div>${desc ? `<div class="desc">${esc(desc)}</div>` : ''}</div>`;
+  }
+
+  function riskLevel(route) {
+    if (!route) return 'ok';
+    if ((route.lastDropped || []).length > 0) return 'bad';
+    if ((route.queued || 0) > 0) return 'warn';
+    return 'ok';
+  }
+
+  function renderRoute(route) {
+    if (!route) { ui.opsStrip.innerHTML = '<span class="badge neutral">无路由数据</span>'; return; }
+
+    const badges = [];
+    const active = route.activeTask ? `${route.activeTask.target || ''} d${route.activeTask.depth || ''}` : null;
+    const risk = riskLevel(route);
+
+    // Risk badge
+    if (risk === 'bad') badges.push('<span class="badge bad">有掉队任务</span>');
+    else if (risk === 'warn') badges.push('<span class="badge warn">队列排队中</span>');
+    else badges.push('<span class="badge ok">运行正常</span>');
+
+    // Active task
+    if (active) badges.push(`<span class="badge neutral">当前: ${esc(active)}</span>`);
+
+    // Active roles
+    const activeRoles = Array.isArray(route.activeRoles) ? route.activeRoles : [];
+    if (activeRoles.length > 0) badges.push(`<span class="badge neutral">活跃角色: ${esc(activeRoles.join(', '))}</span>`);
+
+    // Execution order
+    const order = Array.isArray(route.executionOrder) ? route.executionOrder : [];
+    if (order.length > 0) badges.push(`<span class="badge neutral">执行序: ${esc(order.join(' → '))}</span>`);
+
+    // Retrieval
+    if (route.retrievalType || route.retrievalCount) {
+      badges.push(`<span class="badge neutral">检索: ${esc(route.retrievalType || 'all')}:${route.retrievalCount || 0}</span>`);
+    }
+
+    // Reason by role
+    if (route.reasonByRole) {
+      const reasons = Object.entries(route.reasonByRole).map(([k, v]) => `${k}:${v}`);
+      if (reasons.length > 0) badges.push(`<span class="badge neutral">原因: ${esc(reasons.join(', '))}</span>`);
+    }
+
+    // Dropped info
+    const dropped = (route.lastDropped || [])[0];
+    if (dropped) {
+      badges.push(`<span class="badge bad">掉队: ${esc(dropped.reason)}/${esc(dropped.target)}/d${dropped.depth}</span>`);
+    }
+
+    ui.opsStrip.innerHTML = badges.join('');
+  }
+
+  function sortAgents(agents) {
+    const order = { active: 0, idle: 1, muted: 2 };
+    return [...(agents || [])].sort((a, b) => (order[a.status] ?? 1) - (order[b.status] ?? 1));
   }
 
   async function refresh() {
@@ -48,23 +121,23 @@
 
     if (dashRes.ok) {
       const route = dash.route || {};
-      const active = route.activeTask ? `${route.activeTask.target || ''} d${route.activeTask.depth || ''}` : '-';
-      const dropped = (route.lastDropped || [])[0];
-      const reason = route.reasonByRole ? Object.entries(route.reasonByRole).map(([k, v]) => `${k}:${v}`).join(',') : '-';
-      const order = Array.isArray(route.executionOrder) ? route.executionOrder.join('>') : '-';
-      const activeRoles = Array.isArray(route.activeRoles) ? route.activeRoles.join(',') : '-';
-      const retrieval = `${route.retrievalType || 'all'}:${route.retrievalCount || 0}`;
+
+      // Summary metrics
       ui.stats.innerHTML = [
-        ['总消息', String(dash.totalMessages || 0)],
-        ['Agent 连续轮次', String(dash.agentTurns || 0)],
-        ['路由队列', String(route.queued || 0)],
-        ['最大深度', String(route.maxDepth || 10)],
-      ].map(x => `<div class="kv"><div class="k">${esc(x[0])}</div><div class="v">${esc(x[1])}</div></div>`).join('');
-      ui.route.textContent = `active=${active} | activeRoles=${activeRoles} | reason=${reason} | order=${order} | retrieval=${retrieval}${dropped ? ` | dropped=${dropped.reason}/${dropped.target}/d${dropped.depth}` : ''}`;
-      ui.agents.innerHTML = (dash.agents || []).map(renderAgent).join('');
+        renderMetric('总消息', dash.totalMessages || 0, '当前房间消息总数'),
+        renderMetric('Agent 连续轮次', dash.agentTurns || 0, '距上次人类消息'),
+        renderMetric('路由队列', route.queued || 0, (route.queued || 0) > 0 ? '有任务等待执行' : '队列空闲'),
+        renderMetric('最大深度', route.maxDepth || 10, '路由递归上限'),
+      ].join('');
+
+      // Ops strip
+      renderRoute(route);
+
+      // Agents sorted by status
+      ui.agents.innerHTML = sortAgents(dash.agents).map(renderAgent).join('');
     } else {
-      ui.stats.innerHTML = '<div class="k">dashboard error</div>';
-      ui.route.textContent = String(dash.error || dashRes.status);
+      ui.stats.innerHTML = renderMetric('错误', dash.error || dashRes.status, '获取 dashboard 数据失败');
+      ui.opsStrip.innerHTML = '<span class="badge bad">数据加载失败</span>';
       ui.agents.innerHTML = '';
     }
 

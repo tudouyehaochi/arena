@@ -4,92 +4,162 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Arena Admin</title>
 <style>
-:root{--bg:#f5f7fb;--card:#fff;--line:#dce3ee;--ink:#1f2937;--muted:#64748b;--ok:#16a34a;--warn:#d97706;--bad:#dc2626}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Avenir Next","PingFang SC",sans-serif;color:var(--ink)}
-.wrap{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
-.h{display:flex;align-items:center;gap:8px}.sp{margin-left:auto}.btn{border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
-.btn.primary{background:#0f172a;color:#fff;border-color:#0f172a}.btn.danger{border-color:#ef4444;color:#ef4444}
-.input{border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:220px;background:#fff}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}.kv{border:1px solid var(--line);border-radius:8px;padding:8px}.k{font-size:12px;color:var(--muted)}.v{font-weight:700}
+:root{--bg:radial-gradient(1200px 600px at -20% -10%,#dbeafe 0,#f3f6fb 50%),radial-gradient(1200px 700px at 120% 120%,#e0f2fe 0,#f3f6fb 55%);--card:#fff;--line:#dce3ee;--ink:#1f2937;--muted:#64748b;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--brand:#2563eb;--radius:16px;--shadow:0 8px 24px rgba(15,23,42,.06)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Avenir Next","PingFang SC",sans-serif;color:var(--ink);min-height:100vh}
+.wrap{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+.h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sp{margin-left:auto}
+.btn{border:1px solid var(--line);background:#fff;padding:7px 12px;border-radius:10px;cursor:pointer;font-weight:600;transition:background .15s}
+.btn:hover{background:#f1f5f9}
+.btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}.btn.primary:hover{background:#1d4ed8}
+.btn.danger{border-color:#ef4444;color:#ef4444}.btn.danger:hover{background:#fef2f2}
+.input{border:1px solid var(--line);border-radius:10px;padding:8px 12px;width:220px;background:#fff}
+
+/* Login centered card */
+.login-center{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:16px}
+.login-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:32px;box-shadow:var(--shadow);max-width:420px;width:100%;text-align:center}
+.login-card .title{font-size:22px;font-weight:700;margin-bottom:6px}
+.login-card .subtitle{font-size:13px;color:var(--muted);margin-bottom:20px}
+.login-card .form{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+
+/* Hero */
+.hero{background:linear-gradient(135deg,#1e3a8a 0%,var(--brand) 100%);color:#fff;border:none}
+.hero .title{font-size:20px;font-weight:700}
+.hero-btn{color:#fff;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12)}
+
+/* Runtime overview grid */
+.runtime-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px}
+.metric{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
+.metric .label{font-size:12px;color:var(--muted);margin-bottom:2px}.metric .value{font-size:20px;font-weight:700}.metric .desc{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* Integrity banner */
+.integrity-banner{padding:10px 14px;border-radius:12px;font-weight:600;font-size:14px;display:flex;align-items:center;gap:8px}
+.integrity-banner.pass{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.integrity-banner.fail{background:#fee2e2;color:#991b1b;border:1px solid #fca5a5}
+.integrity-banner.pending{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
+.integrity-detail{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Risk summary at top */
+.risk-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:4px 10px;border-radius:999px;font-weight:600}
+.badge.ok{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.badge.neutral{background:#eef2ff;color:#334155}
+
+/* Two-column workbench */
+.workbench{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* Tables */
+.grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}
+.kv{border:1px solid var(--line);border-radius:8px;padding:8px}.k{font-size:12px;color:var(--muted)}.v{font-weight:700}
 .tbl{width:100%;border-collapse:collapse}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:6px 4px;text-align:left;font-size:13px}
 .bad{color:var(--bad)}.warn{color:var(--warn)}.ok{color:var(--ok)}.hide{display:none}
-.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;font-size:12px;color:#334155}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;font-size:12px;color:#334155;font-weight:600}
+
+/* Role management */
 .role-wrap{display:grid;grid-template-columns:300px 1fr;gap:10px}
 .role-list{display:grid;gap:8px;max-height:420px;overflow:auto}
-.role-item{border:1px solid var(--line);border-radius:10px;padding:8px;cursor:pointer;background:#fff}
-.role-item.active{border-color:#0f172a;background:#f8fafc}
+.role-item{border:1px solid var(--line);border-radius:12px;padding:10px;cursor:pointer;background:#fff;transition:border-color .15s}
+.role-item:hover{border-color:#93c5fd}.role-item.active{border-color:var(--brand);background:#f8fafc}
 .role-editor{display:grid;gap:8px}
 .form-grid{display:grid;grid-template-columns:repeat(3,minmax(120px,1fr));gap:8px}
 .form-grid .wide{grid-column:span 3}
-.skills{display:grid;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px}
+.skills{display:grid;gap:6px;max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:8px}
 .skill-item{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px;align-items:center}
 .hint{font-size:12px;color:var(--muted)}
+.role-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.role-meta .pill{font-size:11px}
+
+@media(max-width:900px){.workbench{grid-template-columns:1fr}.runtime-grid{grid-template-columns:1fr 1fr}.role-wrap{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-<div class="wrap" id="login-panel">
-  <div class="card">
-    <div class="h"><strong>Admin Login</strong></div>
-    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+
+<!-- Login -->
+<div id="login-panel" class="login-center">
+  <div class="login-card">
+    <div class="title">Admin Login</div>
+    <div class="subtitle">请登录以管理系统配置</div>
+    <div class="form">
       <input id="username" class="input" placeholder="username" value="admin">
       <input id="password" class="input" placeholder="password" type="password" value="arena_123">
-      <button id="login" class="btn">登录</button>
+      <button id="login" class="btn primary">登录</button>
     </div>
-    <div id="login-msg" class="warn" style="margin-top:8px"></div>
+    <div id="login-msg" class="warn" style="margin-top:10px"></div>
   </div>
 </div>
+
+<!-- Admin panel -->
 <div class="wrap hide" id="admin-panel">
-  <div class="card h"><strong>Arena Admin</strong><span id="stamp" class="sp"></span><button id="refresh" class="btn">刷新</button><button id="check" class="btn">运行完整性校验</button><button id="logout" class="btn">退出</button></div>
-
-  <div class="card"><div class="h"><strong>系统运维</strong></div><div id="runtime" class="grid" style="margin-top:8px"></div></div>
-  <div class="card"><div class="h"><strong>完整性与房间</strong></div><div id="integrity" style="margin-top:8px"></div></div>
-
-  <div class="card">
-    <div class="h"><strong>模型配置</strong><span class="sp"></span><button id="save-agent-models" class="btn">保存</button></div>
-    <table class="tbl"><thead><tr><th>角色</th><th>后端模型</th></tr></thead><tbody id="agent-models-body"></tbody></table>
-  </div>
-
-  <div class="card">
-    <div class="h"><strong>角色管理</strong><span class="pill">mention / 持续在线</span><span class="sp"></span><button id="add-role" class="btn">新增角色</button><button id="save-roles" class="btn primary">保存角色</button></div>
-    <div class="role-wrap" style="margin-top:8px">
-      <div class="role-list" id="role-list"></div>
-      <div class="role-editor">
-        <div class="form-grid">
-          <input id="role-name" class="input" placeholder="角色名（如 文曲星）">
-          <input id="role-avatar" class="input" placeholder="头像字（1-2字）">
-          <input id="role-color" class="input" placeholder="#14b8a6">
-          <input id="role-alias" class="input wide" placeholder="别名，逗号分隔。示例: 文曲,ux">
-          <select id="role-model" class="input"><option value="claude">claude</option><option value="codex">codex</option></select>
-          <select id="role-status" class="input"><option value="idle">idle</option><option value="active">active</option><option value="muted">muted</option></select>
-          <input id="role-priority" class="input" type="number" min="1" max="100" value="80">
-          <select id="role-activation-mode" class="input">
-            <option value="mention">@名字触发（mention）</option>
-            <option value="always_on">持续在线互动（always_on）</option>
-          </select>
-        </div>
-        <div class="form-grid">
-          <input id="persona-position" class="input wide" placeholder="定位：这个角色负责什么">
-          <input id="persona-style" class="input wide" placeholder="风格：语气和协作风格">
-          <input id="persona-strength" class="input wide" placeholder="擅长：最拿手的能力">
-          <input id="persona-boundary" class="input wide" placeholder="边界：不该做什么 / 何时求助">
-        </div>
-        <div class="hint">Persona 会自动拼接为一句完整人设，适合非技术同学直接填写。</div>
-        <div class="h"><strong>技能绑定</strong><span class="sp"></span><input id="skill-filter" class="input" placeholder="筛选 skill"></div>
-        <div id="skill-list" class="skills"></div>
-        <div class="hint">优先级建议：high 适合核心技能，medium 适合补充技能，low 会优先被预算裁剪。</div>
-      </div>
+  <!-- Hero -->
+  <div class="card hero">
+    <div class="h">
+      <div class="title">Arena Admin</div>
+      <span id="stamp" class="sp" style="font-size:13px;opacity:.85"></span>
+      <button id="refresh" class="btn hero-btn">刷新</button>
+      <button id="check" class="btn hero-btn">运行完整性校验</button>
+      <button id="logout" class="btn hero-btn">退出</button>
     </div>
   </div>
 
-  <div class="card">
-    <div class="h"><strong>告警审计</strong><span class="sp"></span><select id="alert-acked" class="input"><option value="">全部</option><option value="false">未确认</option><option value="true">已确认</option></select><input id="alert-q" class="input" placeholder="搜索事件/详情"><button id="alert-search" class="btn">查询</button></div>
-    <table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>确认人</th><th>确认时间</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table>
-  </div>
-  <div class="card">
-    <div class="h"><strong>备份</strong><span class="sp"></span><select id="backup-kind" class="input"><option value="hourly">hourly</option><option value="daily">daily</option></select><button id="run-backup" class="btn">手动备份</button><button id="run-restore-drill" class="btn danger">恢复演练(dev)</button></div>
-    <div id="backup-status" class="hint" style="margin:6px 0"></div>
-    <table class="tbl"><thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead><tbody id="backups"></tbody></table>
+  <!-- Runtime overview -->
+  <div class="runtime-grid" id="runtime"></div>
+
+  <!-- Integrity banner + risk strip -->
+  <div id="integrity"></div>
+  <div id="risk-strip" class="risk-strip"></div>
+
+  <!-- Two-column workbench -->
+  <div class="workbench">
+    <!-- Left: roles + models -->
+    <div style="display:grid;gap:14px;align-content:start">
+      <div class="card">
+        <div class="h"><strong>角色管理</strong><span class="pill">mention / 持续在线</span><span class="sp"></span><button id="add-role" class="btn">新增角色</button><button id="save-roles" class="btn primary">保存角色</button></div>
+        <div class="role-wrap" style="margin-top:8px">
+          <div class="role-list" id="role-list"></div>
+          <div class="role-editor">
+            <div class="form-grid">
+              <input id="role-name" class="input" placeholder="角色名（如 文曲星）">
+              <input id="role-avatar" class="input" placeholder="头像字（1-2字）">
+              <input id="role-color" class="input" placeholder="#14b8a6">
+              <input id="role-alias" class="input wide" placeholder="别名，逗号分隔。示例: 文曲,ux">
+              <select id="role-model" class="input"><option value="claude">claude</option><option value="codex">codex</option></select>
+              <select id="role-status" class="input"><option value="idle">idle</option><option value="active">active</option><option value="muted">muted</option></select>
+              <input id="role-priority" class="input" type="number" min="1" max="100" value="80">
+              <select id="role-activation-mode" class="input">
+                <option value="mention">@名字触发（mention）</option>
+                <option value="always_on">持续在线互动（always_on）</option>
+              </select>
+            </div>
+            <div class="form-grid">
+              <input id="persona-position" class="input wide" placeholder="定位：这个角色负责什么">
+              <input id="persona-style" class="input wide" placeholder="风格：语气和协作风格">
+              <input id="persona-strength" class="input wide" placeholder="擅长：最拿手的能力">
+              <input id="persona-boundary" class="input wide" placeholder="边界：不该做什么 / 何时求助">
+            </div>
+            <div class="hint">Persona 会自动拼接为一句完整人设，适合非技术同学直接填写。</div>
+            <div class="h"><strong>技能绑定</strong><span class="sp"></span><input id="skill-filter" class="input" placeholder="筛选 skill"></div>
+            <div id="skill-list" class="skills"></div>
+            <div class="hint">优先级建议：high 适合核心技能，medium 适合补充技能，low 会优先被预算裁剪。</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="h"><strong>模型配置</strong><span class="sp"></span><button id="save-agent-models" class="btn">保存</button></div>
+        <table class="tbl"><thead><tr><th>角色</th><th>后端模型</th></tr></thead><tbody id="agent-models-body"></tbody></table>
+      </div>
+    </div>
+
+    <!-- Right: alerts + backup -->
+    <div style="display:grid;gap:14px;align-content:start">
+      <div class="card">
+        <div class="h"><strong>告警审计</strong><span class="sp"></span><select id="alert-acked" class="input"><option value="">全部</option><option value="false">未确认</option><option value="true">已确认</option></select><input id="alert-q" class="input" placeholder="搜索事件/详情"><button id="alert-search" class="btn">查询</button></div>
+        <table class="tbl"><thead><tr><th>时间</th><th>级别</th><th>事件</th><th>详情</th><th>确认人</th><th>确认时间</th><th>操作</th></tr></thead><tbody id="alerts"></tbody></table>
+      </div>
+      <div class="card">
+        <div class="h"><strong>备份</strong><span class="sp"></span><select id="backup-kind" class="input"><option value="hourly">hourly</option><option value="daily">daily</option></select><button id="run-backup" class="btn">手动备份</button><button id="run-restore-drill" class="btn danger">恢复演练(dev)</button></div>
+        <div id="backup-status" class="hint" style="margin:6px 0"></div>
+        <table class="tbl"><thead><tr><th>文件</th><th>大小</th><th>时间</th></tr></thead><tbody id="backups"></tbody></table>
+      </div>
+    </div>
   </div>
 </div>
 <script src="/js/admin-app.js"></script>

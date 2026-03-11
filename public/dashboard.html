@@ -4,30 +4,82 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>Arena Dashboard</title>
 <style>
-:root{--bg:#f5f7fb;--card:#fff;--line:#dce3ee;--ink:#1f2937;--muted:#64748b}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Avenir Next","PingFang SC",sans-serif;color:var(--ink)}
-.wrap{max-width:1200px;margin:0 auto;padding:14px;display:grid;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
-.h{display:flex;align-items:center;gap:8px}.sp{margin-left:auto}.btn{border:1px solid var(--line);background:#fff;padding:6px 10px;border-radius:8px;cursor:pointer}
-.grid{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr));gap:8px}.kv{border:1px solid var(--line);border-radius:8px;padding:8px}.k{font-size:12px;color:var(--muted)}.v{font-weight:700}
-.rooms{display:flex;flex-wrap:wrap;gap:6px}.rbtn{font-size:12px;border:1px solid var(--line);background:#fff;padding:7px 10px;border-radius:999px;cursor:pointer}.rbtn.active{background:#dbeafe;border-color:#93c5fd}
-.search{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:200px}
-.agent{border:1px solid var(--line);border-radius:14px;padding:10px;background:linear-gradient(180deg,#fff,#f8fbff)}.row{display:flex;align-items:center;gap:8px;min-width:0}.agent-avatar{width:34px;height:34px;border-radius:999px;display:grid;place-items:center;font-weight:700;color:#fff}.name{font-weight:700}.sub{font-size:12px;color:var(--muted)}.pill{margin-left:auto;font-size:11px;padding:3px 8px;border-radius:999px;background:#ecfeff;color:#155e75}.line{margin-top:8px;font-size:12px;color:#334155}
-@media (max-width:720px){.grid{grid-template-columns:1fr 1fr}}
+:root{--bg:radial-gradient(1200px 600px at -20% -10%,#dbeafe 0,#f3f6fb 50%),radial-gradient(1200px 700px at 120% 120%,#e0f2fe 0,#f3f6fb 55%);--card:#fff;--line:#dce3ee;--ink:#1f2937;--muted:#64748b;--brand:#2563eb;--ok:#16a34a;--warn:#d97706;--bad:#dc2626;--radius:16px;--shadow:0 8px 24px rgba(15,23,42,.06)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:"Avenir Next","PingFang SC",sans-serif;color:var(--ink);min-height:100vh}
+.wrap{max-width:1200px;margin:0 auto;padding:16px;display:grid;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow)}
+.h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.sp{margin-left:auto}
+.btn{border:1px solid var(--line);background:#fff;padding:7px 12px;border-radius:10px;cursor:pointer;font-weight:600;transition:background .15s}
+.btn:hover{background:#f1f5f9}
+.btn.primary{background:var(--brand);color:#fff;border-color:var(--brand)}.btn.primary:hover{background:#1d4ed8}
+
+/* Hero */
+.hero{background:linear-gradient(135deg,#1e3a8a 0%,var(--brand) 100%);color:#fff;border:none}
+.hero .title{font-size:20px;font-weight:700}.hero .env{font-size:13px;opacity:.85}
+
+/* Summary grid */
+.summary-grid{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:10px}
+.metric{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
+.metric .label{font-size:12px;color:var(--muted);margin-bottom:2px}.metric .value{font-size:22px;font-weight:700}.metric .desc{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* Ops strip */
+.ops-strip{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;padding:4px 10px;border-radius:999px;font-weight:600}
+.badge.ok{background:#dcfce7;color:#166534}.badge.warn{background:#fef3c7;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.badge.neutral{background:#eef2ff;color:#334155}
+
+/* Room panel */
+.rooms{display:flex;flex-wrap:wrap;gap:6px}
+.rbtn{font-size:12px;border:1px solid var(--line);background:#fff;padding:7px 12px;border-radius:999px;cursor:pointer;transition:all .15s;font-weight:500}
+.rbtn:hover{border-color:#93c5fd;background:#eff6ff}.rbtn.active{background:#dbeafe;border-color:#60a5fa;font-weight:700}
+.search{border:1px solid var(--line);border-radius:10px;padding:8px 10px;min-width:200px;background:#fff}
+
+/* Agent panel */
+.agent-grid{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
+.agent{border:1px solid var(--line);border-radius:var(--radius);padding:12px;background:linear-gradient(180deg,#fff,#f8fbff);box-shadow:var(--shadow);transition:transform .15s}
+.agent:hover{transform:translateY(-2px)}
+.row{display:flex;align-items:center;gap:8px;min-width:0}
+.agent-avatar{width:36px;height:36px;border-radius:999px;display:grid;place-items:center;font-weight:700;color:#fff;font-size:14px}
+.name{font-weight:700}.sub{font-size:12px;color:var(--muted)}
+.pill{margin-left:auto;font-size:11px;padding:3px 10px;border-radius:999px;font-weight:600}
+.pill.active{background:#dcfce7;color:#166534}.pill.idle{background:#ecfeff;color:#155e75}.pill.muted{background:#f1f5f9;color:#64748b}
+.line{margin-top:6px;font-size:12px;color:#475569}
+
+@media(max-width:720px){.summary-grid{grid-template-columns:1fr 1fr}.agent-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="card h">
-    <strong>Arena Dashboard</strong>
-    <span id="env" class="sp k"></span>
-    <button id="to-chat" class="btn">Chat</button>
-    <button id="to-admin" class="btn">Admin</button>
-    <button id="refresh" class="btn">刷新</button>
+  <!-- Hero -->
+  <div class="card hero">
+    <div class="h">
+      <div class="title">Arena Dashboard</div>
+      <div class="sp env" id="env"></div>
+      <button id="to-chat" class="btn" style="color:#fff;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12)">Chat</button>
+      <button id="to-admin" class="btn" style="color:#fff;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12)">Admin</button>
+      <button id="refresh" class="btn" style="color:#fff;border-color:rgba(255,255,255,.3);background:rgba(255,255,255,.12)">刷新</button>
+    </div>
   </div>
-  <div class="card"><div class="h"><strong>房间</strong><span class="sp"></span><input id="room-q" class="search" placeholder="筛选 room id"></div><div id="rooms" class="rooms" style="margin-top:8px"></div></div>
-  <div class="card"><div class="h"><strong>运行指标</strong></div><div id="stats" class="grid"></div><div id="route" class="k" style="margin-top:8px"></div></div>
-  <div class="card"><div class="h"><strong>角色状态</strong></div><div id="agents" style="display:grid;gap:8px;margin-top:8px"></div></div>
+
+  <!-- Summary grid -->
+  <div class="summary-grid" id="stats"></div>
+
+  <!-- Ops strip -->
+  <div class="card">
+    <div class="h"><strong>路由状态</strong></div>
+    <div id="ops-strip" class="ops-strip" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Room panel -->
+  <div class="card">
+    <div class="h"><strong>房间</strong><span class="sp"></span><input id="room-q" class="search" placeholder="筛选 room id"></div>
+    <div id="rooms" class="rooms" style="margin-top:8px"></div>
+  </div>
+
+  <!-- Agent panel -->
+  <div class="card">
+    <div class="h"><strong>角色状态</strong></div>
+    <div id="agents" class="agent-grid" style="margin-top:10px"></div>
+  </div>
 </div>
 <script src="/js/dashboard-app.js"></script>
 </body>
